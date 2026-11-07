@@ -1,0 +1,11 @@
+# Archives and packages
+*.zip
+
+# Raw master graphics
+icons/icon_master_1500.png
+
+# Operating System & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

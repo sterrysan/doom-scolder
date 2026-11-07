@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Doom Scolder Settings</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="options.css">
+</head>
+
+<body class="standalone-options-page">
+    <div id="options-toast" class="options-toast" style="display: none;"></div>
+    <div class="container" id="settings-container">
+        <canvas id="maze-canvas" style="display: none;"></canvas>
+
+        <h1 id="settings-title">Doom Scolder Settings</h1>
+
+        <div id="maze-instruction-bar" class="maze-instruction-bar" style="display: none;">
+            <div id="maze-start-pad" class="maze-start-pad">
+                <span class="start-dot"></span>
+                <span id="start-label">START HERE</span>
+            </div>
+        </div>
+
+        <div class="setting-item single-row" id="card-block-limit">
+            <label for="shorts-block-limit" class="card-label">Block after watching</label>
+            <div class="card-control-group">
+                <div class="stepper-wrap">
+                    <button type="button" class="stepper-btn stepper-btn-minus" data-target="shorts-block-limit"
+                        aria-label="Decrease block limit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <input type="number" id="shorts-block-limit" min="1" max="100">
+                    <button type="button" class="stepper-btn stepper-btn-plus" data-target="shorts-block-limit"
+                        aria-label="Increase block limit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+                <span class="unit-text">shorts</span>
+            </div>
+        </div>
+
+        <div class="setting-item single-row" id="card-scold-toggle">
+            <label for="scolding-enabled" class="card-label">Enable audible scolding</label>
+            <div class="card-control-group">
+                <label class="toggle-switch" for="scolding-enabled" title="Toggle audible scolding">
+                    <input type="checkbox" id="scolding-enabled">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="setting-item single-row" id="card-scold-limit">
+            <label for="shorts-limit" class="card-label">Scold after watching</label>
+            <div class="card-control-group">
+                <div class="stepper-wrap">
+                    <button type="button" class="stepper-btn stepper-btn-minus" data-target="shorts-limit"
+                        aria-label="Decrease scold limit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                    <input type="number" id="shorts-limit" min="1" max="100">
+                    <button type="button" class="stepper-btn stepper-btn-plus" data-target="shorts-limit"
+                        aria-label="Increase scold limit">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                            stroke-linecap="round">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+                <span class="unit-text">shorts</span>
+            </div>
+        </div>
+
+        <div class="setting-item" id="card-sounds">
+            <label class="card-label">Scolding Sounds</label>
+            <div class="sound-card-desc">Blasts audio when your scold limit is reached. Drop your own files below</div>
+
+            <!-- Drag & Drop Zone -->
+            <div id="sound-dropzone" class="sound-dropzone">
+                <input type="file" id="sound-file-input" accept="audio/*" multiple style="display: none;">
+                <div class="dropzone-text"><strong>Drag & drop audio files here</strong> or <span class="browse-btn"
+                        id="browse-sounds-btn">browse</span></div>
+                <div class="dropzone-hint">Supports MP3, WAV, OGG, M4A</div>
+            </div>
+
+            <!-- Sound Clips List -->
+            <div class="sound-list-header">
+                <span>Active Sounds (<span id="sound-count">0</span>)</span>
+                <button type="button" id="restore-default-sounds-btn" class="restore-sounds-btn">Restore
+                    Defaults</button>
+            </div>
+            <div id="sound-list" class="sound-list">
+                <!-- Dynamically populated sound items -->
+            </div>
+        </div>
+
+        <div id="save-button-wrapper" class="save-button-wrapper">
+            <div id="dodge-roast-bubble" class="dodge-roast-bubble" style="display: none;">Negotiating with yourself
+                already?</div>
+            <button id="save-button">Save Settings</button>
+        </div>
+    </div>
+    <script src="options.js"></script>
+</body>
+
+</html>

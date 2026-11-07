@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Doom Scolder - YouTube Shorts Blocker",
+  "short_name": "Doom Scolder",
+  "version": "1.0.0",
+  "description": "Stop doomscrolling! Block shorts and optionally get an audible scolding after watching too many YouTube Shorts.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sounds/*"
+      ],
+      "matches": [
+        "*://www.youtube.com/*"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_page": "options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
