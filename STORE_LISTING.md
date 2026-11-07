@@ -13,6 +13,7 @@ Use this document to quickly fill out the Chrome Web Store Developer Dashboard.
 * **Version:** `1.0.0`
 * **Homepage URL:** `https://github.com/sterrysan/doom-scolder`
 * **Support URL:** `https://github.com/sterrysan/doom-scolder/issues`
+* **Privacy Policy URL:** `https://github.com/sterrysan/doom-scolder/blob/main/PRIVACY_POLICY.md`
 * **Summary (Short Description, max 132 characters):**
   ```
   Stop doomscrolling! Block shorts and optionally get an audible scolding after watching too many YouTube Shorts.
