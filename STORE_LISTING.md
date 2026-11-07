@@ -64,15 +64,20 @@ Reclaim your attention span, kill the dopamine loop, and get back to what actual
 ## 3. Privacy Practices Tab (Developer Console)
 
 ### Single Purpose Description
-> "Helps users overcome YouTube Shorts doomscrolling addiction by tracking shorts viewed, blocking playback when user-defined limits are exceeded, and providing anti-cheat friction before limits can be increased."
+> "Helps users overcome short-form video doomscrolling and digital distraction by enforcing viewing limits, delivering mindful blocker overlays when thresholds are reached, and providing anti-cheat friction before limits can be increased."
 
 ### Permission Justifications
 * **`storage`**:
-  > "Used to save user settings (block limit, scold threshold, audible scolding toggle) and local session shorts counter."
+  > "Used to save user preferences (viewing limits, scold thresholds, audio toggles) and local session video counters privately on the device."
 * **`unlimitedStorage`**:
-  > "Required to store user-uploaded custom scold audio files locally as Base64 strings without exceeding Chrome storage quotas."
+  > "Required to store user-uploaded custom audio alert files locally as offline Base64 data without being restricted by standard Chrome storage quotas."
 * **Host Permission (`*://www.youtube.com/*`)**:
-  > "Required exclusively to detect when a YouTube Short is viewed, display the blocking overlay when the user's limit is reached, and duck YouTube audio while playing scold alerts."
+  > "Required to detect short-form feed playback, inject the mindful blocker overlay when user limits are reached, and manage audio ducking for alerts on the active video platform."
+
+### Remote Code Declaration
+* Select: **No, I am not using Remote code**
+* (If justification requested):
+  > "All scripts, styles, markup, and audio assets are packaged completely locally within the extension bundle; no remote scripts, external CDNs, or dynamic eval code are fetched or executed."
 
 ### Data Usage Declarations
 * **Does your extension collect user data?** Select **NO**.
