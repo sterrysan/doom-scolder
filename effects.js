@@ -1377,10 +1377,10 @@
                     this.salvoTimer = 4.2 + Math.random() * 1.4;
                 }
             } else if (stage === 'more_missiles') {
-                if (progress >= 0.99 && !this.finalSwarmLaunched) {
+                if (progress >= 0.95 && !this.finalSwarmLaunched) {
                     this.finalSwarmLaunched = true;
                     this._spawnFinalSwarm(10);
-                    this.salvoTimer = 2.6;
+                    this.salvoTimer = 3.0;
                 } else {
                     this.salvoTimer -= dt;
                     if (this.salvoTimer <= 0) {
@@ -1394,11 +1394,10 @@
                     }
                 }
             } else if (stage === 'mass' && stageElapsed < 2.5) {
-                this.salvoTimer -= dt;
-                if (this.salvoTimer <= 0) {
-                    this.volleyCount++;
-                    this._spawnHypersonicSalvo(2);
-                    this.salvoTimer = 1.8;
+                if (!this.finalSwarmLaunched) {
+                    this.finalSwarmLaunched = true;
+                    this._spawnFinalSwarm(10);
+                    this.salvoTimer = 3.0;
                 }
             }
 
@@ -2567,7 +2566,7 @@
             try {
                 activeVoiceAudio.pause();
                 activeVoiceAudio.currentTime = 0;
-            } catch (_) {}
+            } catch (_) { }
             activeVoiceAudio = null;
         }
     }
