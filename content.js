@@ -28,6 +28,46 @@
     let blockingOverlay = null;
     let overlaySparkController = null;
     let enforceInterval = null;
+
+    function isExtensionContextValid() {
+        try {
+            return Boolean(typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function teardownOrphanedScript() {
+        if (pingInterval) {
+            clearInterval(pingInterval);
+            pingInterval = null;
+        }
+        if (enforceInterval) {
+            clearInterval(enforceInterval);
+            enforceInterval = null;
+        }
+    }
+
+    function safeSendMessage(payload, callback) {
+        if (!isExtensionContextValid()) {
+            teardownOrphanedScript();
+            return false;
+        }
+        try {
+            chrome.runtime.sendMessage(payload, (resp) => {
+                if (!isExtensionContextValid()) {
+                    teardownOrphanedScript();
+                    return;
+                }
+                const err = chrome.runtime.lastError;
+                if (typeof callback === 'function') callback(resp, err);
+            });
+            return true;
+        } catch (_) {
+            teardownOrphanedScript();
+            return false;
+        }
+    }
     let pingInterval = null;
 
     function formatClock(totalSec) {
@@ -260,14 +300,15 @@
             return Promise.resolve(mediaDataUrlCache[relUrl]);
         }
         return new Promise((resolve) => {
-            chrome.runtime.sendMessage({ action: 'fetchMediaDataUrl', url: relUrl }, (resp) => {
-                if (!chrome.runtime.lastError && resp && resp.dataUrl) {
+            const sent = safeSendMessage({ action: 'fetchMediaDataUrl', url: relUrl }, (resp, err) => {
+                if (!err && resp && resp.dataUrl) {
                     mediaDataUrlCache[relUrl] = resp.dataUrl;
                     resolve(resp.dataUrl);
                 } else {
-                    resolve(chrome.runtime.getURL(relUrl));
+                    resolve('');
                 }
             });
+            if (!sent) resolve('');
         });
     }
 
@@ -491,9 +532,7 @@
             closeBtn.style.boxShadow = '0 8px 24px rgba(211, 47, 47, 0.35)';
         });
         closeBtn.addEventListener('click', () => {
-            chrome.runtime.sendMessage({ action: 'closeTab' }, () => {
-                void chrome.runtime.lastError;
-            });
+            safeSendMessage({ action: 'closeTab' });
         });
 
         blockingOverlay.appendChild(sparkCanvas);
@@ -552,9 +591,7 @@
             progress,
             resolveAudio: (path) => resolveMediaSrc({ url: path }),
             onCloseTab: () => {
-                chrome.runtime.sendMessage({ action: 'closeTab' }, () => {
-                    void chrome.runtime.lastError;
-                });
+                safeSendMessage({ action: 'closeTab' });
             }
         });
     }
@@ -685,8 +722,8 @@
     }
 
     function syncStatusFromBackground() {
-        chrome.runtime.sendMessage({ action: 'getStatus' }, (resp) => {
-            if (chrome.runtime.lastError || !resp) return;
+        safeSendMessage({ action: 'getStatus' }, (resp, err) => {
+            if (err || !resp) return;
             currentDoomSeconds = resp.doomSeconds || 0;
             currentDailySeconds = resp.dailyDoomSeconds || 0;
             currentBlockLimitSeconds = resp.blockLimitSeconds || (20 * 60);
@@ -704,6 +741,10 @@
     function startActivityLoop() {
         if (pingInterval) return;
         pingInterval = setInterval(() => {
+            if (!isExtensionContextValid()) {
+                teardownOrphanedScript();
+                return;
+            }
             if (!currentMatch.matched) return;
             if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
 
@@ -712,8 +753,8 @@
 
             if (isBlocked) return;
 
-            chrome.runtime.sendMessage({ action: 'activityPing', platform: currentMatch.platformId }, (resp) => {
-                if (chrome.runtime.lastError || !resp || resp.error) return;
+            safeSendMessage({ action: 'activityPing', platform: currentMatch.platformId }, (resp, err) => {
+                if (err || !resp || resp.error) return;
                 currentDoomSeconds = resp.doomSeconds || 0;
                 currentDailySeconds = resp.dailyDoomSeconds || 0;
                 currentBlockLimitSeconds = resp.blockLimitSeconds || (20 * 60);
