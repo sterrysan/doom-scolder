@@ -3,7 +3,7 @@
   "name": "Doom Scolder",
   "short_name": "Doom Scolder",
   "version": "2.0.0",
-  "description": "Stop doomscrolling! Set a daily budget across YouTube, Reddit, Instagram, X, TikTok & more with audible scolds and anti-cheat.",
+  "description": "A feisty little buddy that scolds you off endless feeds and brings Doom-level chaos when time's up!",
   "permissions": [
     "storage",
     "unlimitedStorage",
