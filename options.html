@@ -10,107 +10,229 @@
 
 <body class="standalone-options-page">
     <div id="options-toast" class="options-toast" style="display: none;"></div>
-    <div class="container" id="settings-container">
-        <canvas id="maze-canvas" style="display: none;"></canvas>
-
-        <h1 id="settings-title">Doom Scolder Settings</h1>
-
-        <div id="maze-instruction-bar" class="maze-instruction-bar" style="display: none;">
-            <div id="maze-start-pad" class="maze-start-pad">
-                <span class="start-dot"></span>
-                <span id="start-label">START HERE</span>
-            </div>
-        </div>
-
-        <div class="setting-item single-row" id="card-block-limit">
-            <label for="shorts-block-limit" class="card-label">Block after watching</label>
-            <div class="card-control-group">
-                <div class="stepper-wrap">
-                    <button type="button" class="stepper-btn stepper-btn-minus" data-target="shorts-block-limit"
-                        aria-label="Decrease block limit">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                            stroke-linecap="round">
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
-                    <input type="number" id="shorts-block-limit" min="1" max="100">
-                    <button type="button" class="stepper-btn stepper-btn-plus" data-target="shorts-block-limit"
-                        aria-label="Increase block limit">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                            stroke-linecap="round">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
+    <div class="options-shell">
+        <aside class="options-sidebar">
+            <div class="sidebar-brand">
+                <div class="standalone-emblem">
+                    <img src="icons/icon48.png" alt="Doom Scolder" class="standalone-emblem-icon">
                 </div>
-                <span class="unit-text">shorts</span>
-            </div>
-        </div>
-
-        <div class="setting-item single-row" id="card-scold-toggle">
-            <label for="scolding-enabled" class="card-label">Enable audible scolding</label>
-            <div class="card-control-group">
-                <label class="toggle-switch" for="scolding-enabled" title="Toggle audible scolding">
-                    <input type="checkbox" id="scolding-enabled">
-                    <span class="toggle-slider"></span>
-                </label>
-            </div>
-        </div>
-
-        <div class="setting-item single-row" id="card-scold-limit">
-            <label for="shorts-limit" class="card-label">Scold after watching</label>
-            <div class="card-control-group">
-                <div class="stepper-wrap">
-                    <button type="button" class="stepper-btn stepper-btn-minus" data-target="shorts-limit"
-                        aria-label="Decrease scold limit">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                            stroke-linecap="round">
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
-                    <input type="number" id="shorts-limit" min="1" max="100">
-                    <button type="button" class="stepper-btn stepper-btn-plus" data-target="shorts-limit"
-                        aria-label="Increase scold limit">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                            stroke-linecap="round">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
+                <div class="standalone-title-wrap">
+                    <h1 id="settings-title">Doom Scolder</h1>
+                    <p class="standalone-subtitle">Enforcement Protocol</p>
                 </div>
-                <span class="unit-text">shorts</span>
-            </div>
-        </div>
-
-        <div class="setting-item" id="card-sounds">
-            <label class="card-label">Scolding Sounds</label>
-            <div class="sound-card-desc">Blasts audio when your scold limit is reached. Drop your own files below</div>
-
-            <!-- Drag & Drop Zone -->
-            <div id="sound-dropzone" class="sound-dropzone">
-                <input type="file" id="sound-file-input" accept="audio/*" multiple style="display: none;">
-                <div class="dropzone-text"><strong>Drag & drop audio files here</strong> or <span class="browse-btn"
-                        id="browse-sounds-btn">browse</span></div>
-                <div class="dropzone-hint">Supports MP3, WAV, OGG, M4A</div>
             </div>
 
-            <!-- Sound Clips List -->
-            <div class="sound-list-header">
-                <span>Active Sounds (<span id="sound-count">0</span>)</span>
-                <button type="button" id="restore-default-sounds-btn" class="restore-sounds-btn">Restore
-                    Defaults</button>
-            </div>
-            <div id="sound-list" class="sound-list">
-                <!-- Dynamically populated sound items -->
-            </div>
-        </div>
+            <nav class="sidebar-nav" id="settings-tabs" aria-label="Settings sections">
+                <button type="button" class="settings-tab-btn active" data-tab="limits" id="tab-btn-limits">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="4" y1="21" x2="4" y2="14"></line>
+                        <line x1="4" y1="10" x2="4" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12" y2="3"></line>
+                        <line x1="20" y1="21" x2="20" y2="16"></line>
+                        <line x1="20" y1="12" x2="20" y2="3"></line>
+                        <line x1="1" y1="14" x2="7" y2="14"></line>
+                        <line x1="9" y1="8" x2="15" y2="8"></line>
+                        <line x1="17" y1="16" x2="23" y2="16"></line>
+                    </svg>
+                    <span>Limits &amp; Media</span>
+                </button>
+                <button type="button" class="settings-tab-btn" data-tab="sites" id="tab-btn-sites">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    <span>Target Sites</span>
+                </button>
+            </nav>
 
-        <div id="save-button-wrapper" class="save-button-wrapper">
-            <div id="dodge-roast-bubble" class="dodge-roast-bubble" style="display: none;">Negotiating with yourself
-                already?</div>
-            <button id="save-button">Save Settings</button>
-        </div>
+            <div class="sidebar-summary" aria-label="Current protocol summary">
+                <div class="summary-heading">Active Protocol</div>
+                <div class="summary-row">
+                    <span>Daily budget</span>
+                    <strong id="summary-budget">20m</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Scolding</span>
+                    <strong id="summary-scold">Muted</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Tracked sites</span>
+                    <strong id="summary-sites">10 active</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Hardcore</span>
+                    <strong id="summary-hardcore">Off</strong>
+                </div>
+            </div>
+        </aside>
+
+        <main class="options-main">
+            <div class="container" id="settings-container">
+                <canvas id="maze-canvas" style="display: none;"></canvas>
+
+                <div id="maze-instruction-bar" class="maze-instruction-bar" style="display: none;">
+                    <div id="maze-roast-text" class="maze-roast-banner" style="display: none;"></div>
+                    <div id="maze-start-pad" class="maze-start-pad">
+                        <span class="start-dot"></span>
+                        <span id="start-label">START HERE</span>
+                    </div>
+                </div>
+
+                <div class="setting-item" id="card-block-limit">
+                    <div class="card-primary-row">
+                        <div class="card-title-group">
+                            <span class="card-icon-badge" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                            </span>
+                            <div class="card-label-inline">
+                                <label for="shorts-block-limit" class="card-label">Block after</label>
+                                <span class="card-label-desc">(Daily limit in mins)</span>
+                            </div>
+                        </div>
+                        <div class="card-control-group">
+                            <div class="stepper-wrap">
+                                <button type="button" class="stepper-btn stepper-btn-minus"
+                                    data-target="shorts-block-limit" aria-label="Decrease block limit">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5" stroke-linecap="round">
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                </button>
+                                <input type="number" id="shorts-block-limit" min="1" max="120">
+                                <button type="button" class="stepper-btn stepper-btn-plus"
+                                    data-target="shorts-block-limit" aria-label="Increase block limit">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5" stroke-linecap="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-primary-row card-hardcore-row">
+                        <div class="card-title-group">
+                            <span class="card-icon-badge" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="9" cy="12" r="1"></circle>
+                                    <circle cx="15" cy="12" r="1"></circle>
+                                    <path d="M8 20v2h8v-2"></path>
+                                    <path d="m12.5 17-.5-1-.5 1h1z"></path>
+                                    <path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"></path>
+                                </svg>
+                            </span>
+                            <div class="card-label-inline">
+                                <label for="manual-reset-only" class="card-label">Manual reset only</label>
+                                <span class="card-label-desc">(No midnight reset)</span>
+                            </div>
+                        </div>
+                        <div class="card-control-group">
+                            <label class="toggle-switch" for="manual-reset-only"
+                                title="Toggle manual reset only">
+                                <input type="checkbox" id="manual-reset-only">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-item" id="card-scold-settings">
+                    <div class="card-primary-row">
+                        <div class="card-title-group">
+                            <span class="card-icon-badge" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                                </svg>
+                            </span>
+                            <div class="card-label-stack">
+                                <label for="scolding-enabled" class="card-label">Scolding</label>
+                            </div>
+                        </div>
+                        <div class="card-control-group">
+                            <label class="toggle-switch" for="scolding-enabled" title="Toggle audible scolding">
+                                <input type="checkbox" id="scolding-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-item" id="card-sounds">
+                    <div class="card-title-group card-sounds-title">
+                        <span class="card-icon-badge" aria-hidden="true">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M9 18V5l12-2v13"></path>
+                                <circle cx="6" cy="18" r="3"></circle>
+                                <circle cx="18" cy="16" r="3"></circle>
+                            </svg>
+                        </span>
+                        <div class="card-label-stack">
+                            <label class="card-label">Scolding Media</label>
+                        </div>
+                    </div>
+
+                    <div id="sound-dropzone" class="sound-dropzone">
+                        <input type="file" id="sound-file-input" accept="audio/*,video/*" multiple
+                            style="display: none;">
+                        <svg class="dropzone-upload-icon" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            aria-hidden="true">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <div class="dropzone-text"><strong>Drag &amp; drop audio or video here</strong> or <span
+                                class="browse-btn" id="browse-sounds-btn">browse</span></div>
+                        <div class="dropzone-hint">Supports MP3, WAV, OGG, M4A, MP4, WebM, MOV</div>
+                    </div>
+
+                    <div class="sound-list-header">
+                        <span>Active Media (<span id="sound-count">0</span>)</span>
+                        <button type="button" id="restore-default-sounds-btn" class="restore-sounds-btn">Restore
+                            Defaults</button>
+                    </div>
+                    <div id="sound-list" class="sound-list"></div>
+                </div>
+
+                <div id="save-button-wrapper" class="save-button-wrapper">
+                    <div id="dodge-roast-bubble" class="dodge-roast-bubble" style="display: none;">Negotiating with
+                        yourself already?</div>
+                    <button id="save-button">Save</button>
+                </div>
+            </div>
+
+            <div class="sites-panel standalone-sites-panel" id="sites-panel" style="display: none;">
+                <section class="sites-block">
+                    <div class="sites-section-header">
+                        <span>Platforms</span>
+                        <div class="custom-domain-form custom-domain-inline">
+                            <input type="text" id="custom-domain-input" placeholder="Add domain (e.g. reddit.com)"
+                                autocomplete="off">
+                            <button type="button" id="add-custom-domain-btn">+ Add</button>
+                        </div>
+                    </div>
+                    <div id="builtin-platforms-list" class="platforms-list"></div>
+                </section>
+
+                <div class="sites-footer">
+                    <button type="button" id="sites-save-btn" class="sites-save-btn">Save</button>
+                </div>
+            </div>
+        </main>
     </div>
+
+    <script src="platforms.js"></script>
     <script src="options.js"></script>
 </body>
 

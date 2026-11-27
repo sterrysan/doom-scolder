@@ -6,10 +6,20 @@
         const container = document.getElementById('settings-container');
         const titleElem = document.getElementById('settings-title');
         const blockLimitInput = document.getElementById('shorts-block-limit');
-        const scoldLimitInput = document.getElementById('shorts-limit');
         const scoldingEnabledCheckbox = document.getElementById('scolding-enabled');
+        const manualResetCheckbox = document.getElementById('manual-reset-only');
         const saveButton = document.getElementById('save-button');
         const saveButtonWrapper = document.getElementById('save-button-wrapper');
+
+        // Tab & Target Sites elements
+        const tabBtnLimits = document.getElementById('tab-btn-limits');
+        const tabBtnSites = document.getElementById('tab-btn-sites');
+        const sitesPanel = document.getElementById('sites-panel');
+        const builtinPlatformsList = document.getElementById('builtin-platforms-list');
+        const customDomainInput = document.getElementById('custom-domain-input');
+        const addCustomDomainBtn = document.getElementById('add-custom-domain-btn');
+        const customDomainsList = document.getElementById('custom-domains-list');
+        const sitesSaveBtn = document.getElementById('sites-save-btn');
 
         // Sound Manager elements
         const soundDropzone = document.getElementById('sound-dropzone');
@@ -22,6 +32,7 @@
         // Maze elements
         const mazeInstructionBar = document.getElementById('maze-instruction-bar');
         const mazeStartPad = document.getElementById('maze-start-pad');
+        const mazeRoastText = document.getElementById('maze-roast-text');
         const startLabel = document.getElementById('start-label');
         const mazeCanvas = document.getElementById('maze-canvas');
         const dodgeRoastBubble = document.getElementById('dodge-roast-bubble');
@@ -29,16 +40,50 @@
 
         const settingCards = [
             document.getElementById('card-block-limit'),
-            document.getElementById('card-scold-toggle'),
-            document.getElementById('card-scold-limit'),
+            document.getElementById('card-scold-settings'),
             document.getElementById('card-sounds')
         ];
+        const summaryBudget = document.getElementById('summary-budget');
+        const summaryScold = document.getElementById('summary-scold');
+        const summarySites = document.getElementById('summary-sites');
+        const summaryHardcore = document.getElementById('summary-hardcore');
 
-        // Default built-in sounds (copied from user's downloads folder)
+        const updateSidebarSummary = () => {
+            if (summaryBudget && blockLimitInput) {
+                const mins = parseInt(blockLimitInput.value, 10) || savedBlockLimit;
+                summaryBudget.textContent = `${mins}m`;
+            }
+            if (summaryScold && scoldingEnabledCheckbox) {
+                const enabled = scoldingEnabledCheckbox.checked;
+                summaryScold.textContent = enabled ? 'On' : 'Muted';
+                summaryScold.classList.toggle('is-active', enabled);
+            }
+            if (summarySites) {
+                const builtinCount = DoomPlatforms.BUILTIN_PLATFORMS.filter(
+                    (p) => (pendingPlatformSettings[p.id]?.enabled ?? p.defaultEnabled)
+                ).length;
+                const customCount = Array.isArray(pendingCustomSites) ? pendingCustomSites.length : 0;
+                summarySites.textContent = `${builtinCount + customCount} active`;
+            }
+            if (summaryHardcore && manualResetCheckbox) {
+                const hc = manualResetCheckbox.checked;
+                summaryHardcore.textContent = hc ? 'Armed' : 'Off';
+                summaryHardcore.classList.toggle('is-active', hc);
+            }
+        };
+
+        if (scoldingEnabledCheckbox) {
+            scoldingEnabledCheckbox.addEventListener('change', updateSidebarSummary);
+        }
+        if (blockLimitInput) blockLimitInput.addEventListener('input', updateSidebarSummary);
+        if (manualResetCheckbox) manualResetCheckbox.addEventListener('change', updateSidebarSummary);
+
+        // Default built-in media
         const DEFAULT_SOUNDS = [
-            { id: 'default_scream1', name: 'Scream1.mp3', url: 'sounds/Scream1.mp3', isDefault: true, enabled: true },
-            { id: 'default_scream2', name: 'Scream2.mp3', url: 'sounds/Scream2.mp3', isDefault: true, enabled: true },
-            { id: 'default_obsession', name: 'Obsession.mp3', url: 'sounds/Obsession.mp3', isDefault: true, enabled: true }
+            { id: 'default_scream1', name: 'Scream1.mp3', url: 'sounds/Scream1.mp3', mediaType: 'audio', isDefault: true, enabled: true },
+            { id: 'default_obsession', name: 'Obsession.mp3', url: 'sounds/Obsession.mp3', mediaType: 'audio', isDefault: true, enabled: true },
+            { id: 'default_vid_scream1', name: 'vid_scream1.mp4', url: 'sounds/vid_scream1.mp4', mediaType: 'video', isDefault: true, enabled: true },
+            { id: 'default_vid_scream2', name: 'vid_scream2.mp4', url: 'sounds/vid_scream2.mp4', mediaType: 'video', isDefault: true, enabled: true }
         ];
 
         let currentSounds = [];
@@ -46,8 +91,14 @@
         let currentlyPlayingId = null;
 
         // State variables
-        let savedBlockLimit = 10;
-        let savedScoldLimit = 2;
+        let savedBlockLimit = 20;
+        let savedManualResetOnly = false;
+        let savedPlatformSettings = DoomPlatforms.getDefaultPlatformSettings();
+        let pendingPlatformSettings = DoomPlatforms.getDefaultPlatformSettings();
+        let savedCustomSites = [];
+        let pendingCustomSites = [];
+        let activeTab = 'limits';
+
         let isLockdownActive = false;
         let isDrawing = false;
         let mazeCompleted = false;
@@ -276,13 +327,26 @@
         // ==========================================
         // Toast Notification Utility
         // ==========================================
-        const showToast = (message, color = '#ff5252', duration = 3000) => {
+        const showToast = (message, color = '#ef4444', duration = 3000) => {
+            if (isLockdownActive && activeTab === 'limits' && mazeRoastText) {
+                if (toastTimeout) clearTimeout(toastTimeout);
+                if (optionsToast) optionsToast.style.display = 'none';
+                mazeRoastText.innerHTML = message;
+                mazeRoastText.style.borderColor = color;
+                mazeRoastText.style.color = color;
+                mazeRoastText.style.display = 'none';
+                void mazeRoastText.offsetWidth;
+                mazeRoastText.style.display = 'flex';
+                return;
+            }
             if (!optionsToast) return;
             if (toastTimeout) clearTimeout(toastTimeout);
 
             optionsToast.innerHTML = message;
             optionsToast.style.borderColor = color;
             optionsToast.style.color = color;
+            optionsToast.style.display = 'none';
+            void optionsToast.offsetWidth;
             optionsToast.style.display = 'flex';
 
             toastTimeout = setTimeout(() => {
@@ -322,14 +386,13 @@
             };
         };
 
-        // Calculate the 8 S-curve Slalom Checkpoint Gates
+        // Calculate the 6 S-curve Slalom Checkpoint Gates
         const getGates = () => {
             const cWidth = container.clientWidth;
             const rStart = getRelRect(mazeStartPad);
             const r0 = getRelRect(settingCards[0]); // Block Limit
-            const r1 = getRelRect(settingCards[1]); // Scold Toggle
-            const r2 = getRelRect(settingCards[2]); // Scold Limit
-            const r3 = getRelRect(settingCards[3]); // Messages
+            const r1 = getRelRect(settingCards[1]); // Audible Scolding
+            const r2 = getRelRect(settingCards[2]); // Sounds
             const rBtn = getRelRect(saveButton);
 
             return [
@@ -338,17 +401,13 @@
                 // Gate 2: Gap between Card 0 and Card 1 (crossing towards left)
                 { name: "Gap 1", xMin: r0.left - 10, xMax: r0.right + 10, yMin: r0.bottom - 5, yMax: r1.top + 5 },
                 // Gate 3: Left corridor of Card 1
-                { name: "Mid Left 1", xMin: 0, xMax: r1.left, yMin: r1.top - 10, yMax: r1.bottom + 10 },
+                { name: "Mid Left", xMin: 0, xMax: r1.left, yMin: r1.top - 10, yMax: r1.bottom + 10 },
                 // Gate 4: Gap between Card 1 and Card 2 (crossing towards right)
                 { name: "Gap 2", xMin: r1.left - 10, xMax: r1.right + 10, yMin: r1.bottom - 5, yMax: r2.top + 5 },
                 // Gate 5: Right corridor of Card 2
-                { name: "Mid Right 2", xMin: r2.right, xMax: cWidth, yMin: r2.top - 10, yMax: r2.bottom + 10 },
-                // Gate 6: Gap between Card 2 and Card 3 (crossing towards left)
-                { name: "Gap 3", xMin: r2.left - 10, xMax: r2.right + 10, yMin: r2.bottom - 5, yMax: r3.top + 5 },
-                // Gate 7: Left corridor of Card 3
-                { name: "Bottom Left", xMin: 0, xMax: r3.left, yMin: r3.top - 10, yMax: r3.bottom + 10 },
-                // Gate 8: Under Card 3 / Entrance to Save Button
-                { name: "Finish Line", xMin: r3.left - 20, xMax: r3.right + 20, yMin: r3.bottom - 5, yMax: rBtn.top + 15 }
+                { name: "Bottom Right", xMin: r2.right, xMax: cWidth, yMin: r2.top - 10, yMax: r2.bottom + 10 },
+                // Gate 6: Under Card 2 / Entrance to Save Button
+                { name: "Finish Line", xMin: r2.left - 20, xMax: r2.right + 20, yMin: r2.bottom - 5, yMax: rBtn.top + 15 }
             ];
         };
 
@@ -368,7 +427,6 @@
             const r0 = getRelRect(settingCards[0]);
             const r1 = getRelRect(settingCards[1]);
             const r2 = getRelRect(settingCards[2]);
-            const r3 = getRelRect(settingCards[3]);
             const rBtn = getRelRect(saveButton);
             const cWidth = container.clientWidth;
 
@@ -377,8 +435,8 @@
 
             const gap01Y = (r0.bottom + r1.top) / 2;
             const gap12Y = (r1.bottom + r2.top) / 2;
-            const gap23Y = (r2.bottom + r3.top) / 2;
-            const gap3BtnY = (r3.bottom + rBtn.top) / 2;
+            const gap2BtnY = r2.bottom + Math.max(6, (rBtn.top - r2.bottom) * 0.45);
+            const endY = Math.max(gap2BtnY + 4, rBtn.top - 4);
 
             // Clean orthogonal corridor path with rounded corners (starts directly from the RIGHT side of the pill)
             const pathPointsGuide = [
@@ -388,11 +446,9 @@
                 { x: leftX, y: gap01Y },
                 { x: leftX, y: gap12Y },
                 { x: rightX, y: gap12Y },
-                { x: rightX, y: gap23Y },
-                { x: leftX, y: gap23Y },
-                { x: leftX, y: gap3BtnY },
-                { x: rBtn.centerX, y: gap3BtnY },
-                { x: rBtn.centerX, y: rBtn.top - 8 }
+                { x: rightX, y: gap2BtnY },
+                { x: rBtn.centerX, y: gap2BtnY },
+                { x: rBtn.centerX, y: endY }
             ];
 
             ctx.save();
@@ -755,11 +811,11 @@
         let totalDistanceDrawn = 0;
 
         const WASHOUT_ROASTS = [
-            "⛈️ Washed away! Hesitation is defeat in this storm.",
-            "🌧️ Too slow! The downpour washed your line away. Move with conviction!",
-            "⚡ ZAPPED BY LIGHTNING! Stalling in the rain won't save you.",
-            "🌧️ Dissolved! Snail pace won't survive the tempest!",
-            "⛈️ Frozen like a deer in headlights! Start over from START."
+            "Washed away! Hesitation is defeat in this storm.",
+            "Too slow! The downpour washed your line away. Move with conviction!",
+            "ZAPPED BY LIGHTNING! Stalling in the rain won't save you.",
+            "Dissolved! Snail pace won't survive the tempest!",
+            "Frozen like a deer in headlights! Start over from START."
         ];
 
         const triggerStormActivation = () => {
@@ -771,7 +827,7 @@
 
             if (!stormToastShown) {
                 stormToastShown = true;
-                showToast("⛈️ Storm incoming! Move faster before the rain washes your line away!", '#38bdf8', 3200);
+                showToast("Storm incoming! Move faster before the rain washes your line away!", '#ef4444', 3200);
             }
         };
 
@@ -799,7 +855,7 @@
             deactivateStorm();
 
             const roast = WASHOUT_ROASTS[Math.floor(Math.random() * WASHOUT_ROASTS.length)];
-            showToast(roast, '#38bdf8', 3600);
+            showToast(roast, '#ef4444', 3600);
 
             mazeStartPad.classList.remove('active');
             startLabel.textContent = 'START HERE';
@@ -1058,7 +1114,7 @@
             deactivateStorm();
 
             mazeStartPad.classList.add('active');
-            startLabel.textContent = '🟠 NAVIGATING (Gate 0/8)';
+            startLabel.textContent = `NAVIGATING (Gate 0/${getGates().length})`;
 
             // Fade away the dotted guiding line now that drawing has started!
             fadeGuide(0.0);
@@ -1120,7 +1176,7 @@
                 if (currX >= g.xMin && currX <= g.xMax && currY >= g.yMin && currY <= g.yMax) {
                     currentGateIndex++;
                     playGatePing();
-                    startLabel.textContent = `🟠 GATE ${currentGateIndex}/${gates.length}`;
+                    startLabel.textContent = `GATE ${currentGateIndex}/${gates.length}`;
 
                     // Finished all gates!
                     if (currentGateIndex >= gates.length) {
@@ -1153,19 +1209,17 @@
             playSuccessFanfare();
 
             mazeStartPad.classList.remove('active');
-            startLabel.textContent = '✅ SLALOM COMPLETED!';
+            startLabel.textContent = 'SLALOM COMPLETED';
 
             saveButtonWrapper.style.transform = 'none';
             saveButton.classList.remove('locked-dodge');
             saveButton.classList.add('slalom-unlocked');
-            saveButton.textContent = 'Save Settings';
+            saveButton.textContent = 'Save';
             saveButton.style.transform = 'none';
 
-            dodgeRoastBubble.style.color = '#4caf50';
-            dodgeRoastBubble.style.borderColor = '#4caf50';
-            dodgeRoastBubble.textContent = 'Save now before you lose self-control.';
+            dodgeRoastBubble.style.display = 'none';
 
-            showToast('✅ Incredible steady hands! Click Save to confirm.', '#4caf50');
+            showToast('Steady hands. Click Save to confirm.', '#84cc16');
         };
 
         // ==========================================
@@ -1188,25 +1242,34 @@
         const dodgeSaveButton = (e, btnCenterX) => {
             dodgeCount++;
 
-            // Corner pivot rotation away from cursor
+            const cRect = container.getBoundingClientRect();
+            const btnRect = saveButton.getBoundingClientRect();
+            const availLeft = Math.max(0, btnRect.left - cRect.left - 16);
+            const availRight = Math.max(0, cRect.right - btnRect.right - 16);
+
             const isCursorLeft = e.clientX < btnCenterX;
-            const angle = isCursorLeft ? 16 : -16;
-            const pivot = isCursorLeft ? 'bottom right' : 'bottom left';
-            const verticalJump = -45;
+            let tx = 0;
+            if (isCursorLeft && availRight >= 24) {
+                tx = Math.min(availRight, 55);
+            } else {
+                tx = -Math.min(availLeft, 90 + (dodgeCount % 3) * 35);
+            }
+            const ty = dodgeCount % 2 === 0 ? -34 : 6;
+            const angle = tx < 0 ? -10 : 10;
 
-            saveButtonWrapper.style.transformOrigin = pivot;
-            saveButtonWrapper.style.transform = `translateY(${verticalJump}px) rotate(${angle}deg)`;
+            saveButton.style.transformOrigin = 'center center';
+            saveButton.style.transform = `translate(${tx}px, ${ty}px) rotate(${angle}deg)`;
 
-            // Update roast bubble
+            // Show roast in top arena banner
             const roast = DODGE_ROASTS[dodgeCount % DODGE_ROASTS.length];
-            dodgeRoastBubble.textContent = roast;
-            dodgeRoastBubble.style.display = 'block';
+            dodgeRoastBubble.style.display = 'none';
+            showToast(roast, '#ef4444', 3200);
 
             setTimeout(() => {
                 if (isLockdownActive && !mazeCompleted) {
-                    saveButtonWrapper.style.transform = 'translateY(0) rotate(0deg)';
+                    saveButton.style.transform = 'translate(0, 0) rotate(0deg)';
                 }
-            }, 380);
+            }, 420);
         };
 
         // Click block when locked
@@ -1217,7 +1280,6 @@
                 playBuzzerSound();
                 const btnRect = saveButton.getBoundingClientRect();
                 dodgeSaveButton(e, btnRect.left + btnRect.width / 2);
-                showToast(LIMIT_INCREASE_WARNING, '#ff5252', 3600);
             }
         });
 
@@ -1227,24 +1289,82 @@
                 e.preventDefault();
                 saveButton.blur();
                 playBuzzerSound();
-                showToast("⌨️ Caught in 4K! Tab won't save you. Draw the line with your mouse! 🖱️");
+                showToast("Tab won't save you. Draw the line with your mouse.");
             }
         });
 
         // ==========================================
-        // Real-time Limit Increase Detection
+        // Real-time Weakening & Asymmetric Friction
         // ==========================================
-        const checkLimitIncrease = () => {
+        const isWeakeningRules = () => {
             const currentBlock = parseInt(blockLimitInput.value, 10);
-            const currentScold = parseInt(scoldLimitInput.value, 10);
 
             const isBlockIncreased = !isNaN(currentBlock) && currentBlock > savedBlockLimit;
-            const isScoldIncreased = !isNaN(currentScold) && currentScold > savedScoldLimit;
+            const isManualResetDisabled = savedManualResetOnly && manualResetCheckbox && !manualResetCheckbox.checked;
 
-            if (isBlockIncreased || isScoldIncreased) {
+            let isSiteWeakened = false;
+            for (const p of DoomPlatforms.BUILTIN_PLATFORMS) {
+                const prev = savedPlatformSettings[p.id] || { enabled: p.defaultEnabled, scope: p.defaultScope };
+                const next = pendingPlatformSettings[p.id] || prev;
+                if (prev.enabled && !next.enabled) {
+                    isSiteWeakened = true;
+                    break;
+                }
+                if (p.supportsScope && prev.enabled && next.enabled && prev.scope === 'full' && next.scope === 'feeds') {
+                    isSiteWeakened = true;
+                    break;
+                }
+            }
+
+            if (!isSiteWeakened) {
+                for (const prevSite of savedCustomSites) {
+                    if (!prevSite.enabled) continue;
+                    const nextSite = pendingCustomSites.find(s => s.id === prevSite.id);
+                    if (!nextSite || !nextSite.enabled) {
+                        isSiteWeakened = true;
+                        break;
+                    }
+                }
+            }
+
+            return isBlockIncreased || isManualResetDisabled || isSiteWeakened;
+        };
+
+        const updateLockdownDifficulty = () => {
+            if (!container || !blockLimitInput) return;
+            const currentBlock = parseInt(blockLimitInput.value, 10);
+            const delta = (!isNaN(currentBlock) && currentBlock > savedBlockLimit)
+                ? (currentBlock - savedBlockLimit)
+                : 0;
+            const diff = Math.min(1, delta / 30);
+
+            const sideInset = Math.round(44 - diff * 20); // 44px (22px/side) -> 24px (12px/side)
+            const gap1 = Math.round(12 - diff * 7);       // 12px -> 5px
+            const gap2 = Math.round(11 - diff * 7);       // 11px -> 4px
+            const gap3 = Math.round(10 - diff * 6);       // 10px -> 4px
+
+            container.style.setProperty('--slalom-inset', `${sideInset}px`);
+            container.style.setProperty('--slalom-gap-1', `${gap1}px`);
+            container.style.setProperty('--slalom-gap-2', `${gap2}px`);
+            container.style.setProperty('--slalom-gap-3', `${gap3}px`);
+        };
+
+        const checkLimitIncrease = () => {
+            if (isWeakeningRules()) {
+                updateLockdownDifficulty();
                 enableLockdownMode();
+                animateTightenCanvas(420);
             } else {
                 disableLockdownMode();
+            }
+            if (sitesSaveBtn) {
+                if (isWeakeningRules() && !mazeCompleted) {
+                    sitesSaveBtn.textContent = 'Complete Shame Slalom to Save';
+                    sitesSaveBtn.classList.add('needs-slalom');
+                } else {
+                    sitesSaveBtn.textContent = 'Save';
+                    sitesSaveBtn.classList.remove('needs-slalom');
+                }
             }
         };
 
@@ -1276,22 +1396,23 @@
             totalDistanceDrawn = 0;
 
             container.classList.add('lockdown-active');
+            const scrollArea = container.closest('.settings-scroll-area');
+            if (scrollArea) {
+                scrollArea.scrollTop = 0;
+            }
             mazeInstructionBar.style.display = 'flex';
             mazeCanvas.style.display = 'block';
-            dodgeRoastBubble.style.display = 'block';
-            dodgeRoastBubble.style.color = '#ff5252';
-            dodgeRoastBubble.style.borderColor = '#ff5252';
-            dodgeRoastBubble.textContent = "🖕 Negotiating with yourself already?";
+            dodgeRoastBubble.style.display = 'none';
 
             saveButtonWrapper.style.transform = 'none';
             saveButton.classList.add('locked-dodge');
             saveButton.classList.remove('slalom-unlocked');
-            saveButton.textContent = 'Save Settings';
+            saveButton.textContent = 'Save';
 
             startLabel.textContent = 'START HERE';
             mazeStartPad.classList.remove('active');
 
-            showToast(LIMIT_INCREASE_WARNING, '#ff5252', 4000);
+            showToast(LIMIT_INCREASE_WARNING, '#ef4444', 4000);
 
             guideOpacity = 1.0;
             targetGuideOpacity = 1.0;
@@ -1318,6 +1439,10 @@
 
             container.classList.remove('lockdown-active');
             mazeInstructionBar.style.display = 'none';
+            if (mazeRoastText) {
+                mazeRoastText.style.display = 'none';
+                mazeRoastText.textContent = '';
+            }
             mazeCanvas.style.display = 'none';
             dodgeRoastBubble.style.display = 'none';
 
@@ -1325,7 +1450,7 @@
             saveButton.classList.remove('locked-dodge');
             saveButton.classList.remove('slalom-unlocked');
             saveButton.style.transform = '';
-            saveButton.textContent = 'Save Settings';
+            saveButton.textContent = 'Save';
 
             animateTightenCanvas(420);
         };
@@ -1333,6 +1458,13 @@
         // ==========================================
         // Scolding Sounds Manager (Drag & Drop)
         // ==========================================
+        const isVideoMedia = (item) => {
+            if (!item) return false;
+            if (item.mediaType === 'video') return true;
+            if (item.dataUrl && item.dataUrl.startsWith('data:video/')) return true;
+            return /\.(mp4|webm|mov|m4v)$/i.test(item.name || item.url || '');
+        };
+
         const renderSoundList = () => {
             soundCount.textContent = currentSounds.length;
             soundList.innerHTML = '';
@@ -1340,12 +1472,13 @@
             if (currentSounds.length === 0) {
                 const empty = document.createElement('div');
                 empty.className = 'empty-sounds';
-                empty.textContent = 'No sounds added. Drag & drop audio files above!';
+                empty.textContent = 'No media added. Drag & drop audio or video files above.';
                 soundList.appendChild(empty);
                 return;
             }
 
             currentSounds.forEach((sound, index) => {
+                const isVideo = isVideoMedia(sound);
                 const item = document.createElement('div');
                 item.className = 'sound-item';
 
@@ -1354,7 +1487,9 @@
 
                 const icon = document.createElement('span');
                 icon.className = 'sound-icon';
-                icon.textContent = '🔊';
+                icon.innerHTML = isVideo
+                    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>'
+                    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>';
 
                 const name = document.createElement('span');
                 name.className = 'sound-name';
@@ -1362,8 +1497,8 @@
                 name.title = sound.name;
 
                 const tag = document.createElement('span');
-                tag.className = `sound-tag ${sound.isDefault ? 'default-tag' : 'custom-tag'}`;
-                tag.textContent = sound.isDefault ? 'Default' : 'Custom';
+                tag.className = `sound-tag ${isVideo ? 'video-tag' : 'default-tag'}`;
+                tag.textContent = isVideo ? 'Video' : 'Audio';
 
                 info.appendChild(icon);
                 info.appendChild(name);
@@ -1376,7 +1511,9 @@
                 playBtn.type = 'button';
                 playBtn.className = 'sound-play-btn';
                 const isPlaying = (currentlyPlayingId === sound.id);
-                playBtn.textContent = isPlaying ? '⏹ Stop' : '▶ Play';
+                playBtn.innerHTML = isPlaying
+                    ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"></rect></svg><span>Stop</span>'
+                    : '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg><span>Play</span>';
                 if (isPlaying) playBtn.classList.add('playing');
 
                 playBtn.addEventListener('click', (e) => {
@@ -1387,7 +1524,8 @@
                 const deleteBtn = document.createElement('button');
                 deleteBtn.type = 'button';
                 deleteBtn.className = 'sound-delete-btn';
-                deleteBtn.textContent = '🗑️';
+                deleteBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>';
+                deleteBtn.setAttribute('aria-label', `Remove ${sound.name}`);
                 deleteBtn.title = 'Remove sound';
                 deleteBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -1409,7 +1547,7 @@
             });
         };
 
-        const togglePreviewSound = (sound, btnElem) => {
+        const togglePreviewSound = (sound) => {
             if (currentlyPlayingId === sound.id && previewAudio) {
                 previewAudio.pause();
                 previewAudio = null;
@@ -1425,6 +1563,56 @@
             }
 
             const src = sound.dataUrl || sound.url;
+
+            if (isVideoMedia(sound)) {
+                const backdrop = document.createElement('div');
+                backdrop.className = 'video-preview-backdrop';
+
+                const card = document.createElement('div');
+                card.className = 'video-preview-card';
+
+                const header = document.createElement('div');
+                header.className = 'video-preview-header';
+                const title = document.createElement('span');
+                title.textContent = sound.name;
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'video-preview-close';
+                closeBtn.textContent = 'Close';
+
+                const video = document.createElement('video');
+                video.className = 'video-preview-player';
+                video.src = src;
+                video.controls = true;
+                video.autoplay = true;
+                video.volume = 1.0;
+
+                const cleanup = () => {
+                    video.pause();
+                    backdrop.remove();
+                    currentlyPlayingId = null;
+                    renderSoundList();
+                };
+
+                closeBtn.addEventListener('click', cleanup);
+                backdrop.addEventListener('click', (e) => {
+                    if (e.target === backdrop) cleanup();
+                });
+                video.onended = cleanup;
+
+                header.appendChild(title);
+                header.appendChild(closeBtn);
+                card.appendChild(header);
+                card.appendChild(video);
+                backdrop.appendChild(card);
+                document.body.appendChild(backdrop);
+
+                currentlyPlayingId = sound.id;
+                renderSoundList();
+                video.play().catch(() => { });
+                return;
+            }
+
             previewAudio = new Audio(src);
             previewAudio.volume = 1.0;
             currentlyPlayingId = sound.id;
@@ -1440,7 +1628,7 @@
                 previewAudio = null;
                 currentlyPlayingId = null;
                 renderSoundList();
-                showToast('Error playing audio file', '#ff5252');
+                showToast('Error playing media file', '#ef4444');
             };
 
             previewAudio.play().catch(e => {
@@ -1454,22 +1642,25 @@
             if (!files || files.length === 0) return;
 
             Array.from(files).forEach(file => {
-                if (file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(file.name)) {
+                const isAudio = file.type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac)$/i.test(file.name);
+                const isVideo = file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(file.name);
+                if (isAudio || isVideo) {
                     const reader = new FileReader();
                     reader.onload = (e) => {
                         currentSounds.push({
                             id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6),
                             name: file.name,
                             dataUrl: e.target.result,
+                            mediaType: isVideo ? 'video' : 'audio',
                             isDefault: false,
                             enabled: true
                         });
                         renderSoundList();
-                        showToast(`Added sound: ${file.name}`, '#4caf50');
+                        showToast(`Added ${isVideo ? 'video' : 'audio'}: ${file.name}`, '#84cc16');
                     };
                     reader.readAsDataURL(file);
                 } else {
-                    showToast(`Skipped ${file.name}: not an audio file`, '#ff5252');
+                    showToast(`Skipped ${file.name}: unsupported media file`, '#ef4444');
                 }
             });
         };
@@ -1513,18 +1704,275 @@
         restoreDefaultSoundsBtn.addEventListener('click', () => {
             currentSounds = JSON.parse(JSON.stringify(DEFAULT_SOUNDS));
             renderSoundList();
-            showToast('Restored default scold sounds (Screams & Obsession)', '#4caf50');
+            showToast('Restored default scolding media', '#84cc16');
         });
 
-        blockLimitInput.addEventListener('input', checkLimitIncrease);
-        scoldLimitInput.addEventListener('input', checkLimitIncrease);
+        let lastMockToastAt = 0;
+        const MOCK_OVER_LIMIT_LINES = [
+            'Bro really tried to set over 120 minutes. Put the phone down and go touch grass.'
+        ];
+
+        function showOverLimitMock(withBuzzer = false) {
+            const now = Date.now();
+            if (!withBuzzer && now - lastMockToastAt < 1600) return;
+            lastMockToastAt = now;
+            const msg = MOCK_OVER_LIMIT_LINES[Math.floor(Math.random() * MOCK_OVER_LIMIT_LINES.length)];
+            if (withBuzzer) playBuzzerSound();
+            showToast(`${WARNING_ICON_SVG}<span>${msg}</span>`, '#ef4444', 3600);
+        }
+
+        blockLimitInput.addEventListener('input', () => {
+            const val = parseInt(blockLimitInput.value, 10);
+            if (!isNaN(val) && val > 120) {
+                showOverLimitMock(false);
+            }
+            checkLimitIncrease();
+        });
+        if (manualResetCheckbox) {
+            manualResetCheckbox.addEventListener('change', checkLimitIncrease);
+        }
         window.addEventListener('resize', () => {
-            if (isLockdownActive) {
+            if (isLockdownActive && activeTab === 'limits') {
                 resizeCanvas();
                 initRain();
                 redrawCanvas();
             }
         });
+
+        // ==========================================
+        // Tab Switching & Target Sites Manager
+        // ==========================================
+        const switchSettingsTab = (tabName) => {
+            activeTab = tabName;
+            if (tabBtnLimits) tabBtnLimits.classList.toggle('active', tabName === 'limits');
+            if (tabBtnSites) tabBtnSites.classList.toggle('active', tabName === 'sites');
+
+            if (container) container.style.display = tabName === 'limits' ? 'flex' : 'none';
+            if (sitesPanel) sitesPanel.style.display = tabName === 'sites' ? 'flex' : 'none';
+
+            if (tabName === 'limits' && isLockdownActive) {
+                setTimeout(() => {
+                    resizeCanvas();
+                    initRain();
+                    redrawCanvas();
+                }, 40);
+            } else if (tabName === 'sites') {
+                deactivateStorm();
+            }
+        };
+
+        if (tabBtnLimits) tabBtnLimits.addEventListener('click', () => switchSettingsTab('limits'));
+        if (tabBtnSites) tabBtnSites.addEventListener('click', () => switchSettingsTab('sites'));
+
+        const renderBuiltinPlatforms = () => {
+            if (!builtinPlatformsList) return;
+            builtinPlatformsList.innerHTML = '';
+
+            DoomPlatforms.BUILTIN_PLATFORMS.forEach((platform) => {
+                const state = pendingPlatformSettings[platform.id] || {
+                    enabled: platform.defaultEnabled,
+                    scope: platform.defaultScope
+                };
+
+                const row = document.createElement('div');
+                row.className = 'platform-row';
+
+                const info = document.createElement('div');
+                info.className = 'platform-info';
+
+                const nameLine = document.createElement('div');
+                nameLine.className = 'platform-name';
+                nameLine.textContent = platform.name;
+
+                info.appendChild(nameLine);
+
+                const controls = document.createElement('div');
+                controls.className = 'platform-controls';
+
+                if (platform.supportsScope) {
+                    const scopeGroup = document.createElement('div');
+                    scopeGroup.className = 'scope-pill-group';
+
+                    const scopeLabel = platform.scopeLabel || 'Feeds';
+                    const feedsBtn = document.createElement('button');
+                    feedsBtn.type = 'button';
+                    feedsBtn.className = `scope-pill-btn ${state.scope === 'feeds' ? 'active' : ''}`;
+                    feedsBtn.textContent = scopeLabel;
+                    feedsBtn.title = `Count & block ${scopeLabel.toLowerCase()} only`;
+                    feedsBtn.addEventListener('click', () => {
+                        pendingPlatformSettings[platform.id].scope = 'feeds';
+                        renderBuiltinPlatforms();
+                        checkLimitIncrease();
+                    });
+
+                    const fullBtn = document.createElement('button');
+                    fullBtn.type = 'button';
+                    fullBtn.className = `scope-pill-btn ${state.scope === 'full' ? 'active' : ''}`;
+                    fullBtn.textContent = 'Full';
+                    fullBtn.title = 'Count & block entire domain';
+                    fullBtn.addEventListener('click', () => {
+                        pendingPlatformSettings[platform.id].scope = 'full';
+                        renderBuiltinPlatforms();
+                        checkLimitIncrease();
+                    });
+
+                    scopeGroup.appendChild(feedsBtn);
+                    scopeGroup.appendChild(fullBtn);
+                    controls.appendChild(scopeGroup);
+                }
+
+                const toggleLabel = document.createElement('label');
+                toggleLabel.className = 'toggle-switch';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = Boolean(state.enabled);
+                checkbox.addEventListener('change', () => {
+                    pendingPlatformSettings[platform.id].enabled = checkbox.checked;
+                    updateSidebarSummary();
+                    checkLimitIncrease();
+                });
+                const slider = document.createElement('span');
+                slider.className = 'toggle-slider';
+
+                toggleLabel.appendChild(checkbox);
+                toggleLabel.appendChild(slider);
+                controls.appendChild(toggleLabel);
+
+                row.appendChild(info);
+                row.appendChild(controls);
+                builtinPlatformsList.appendChild(row);
+            });
+            appendCustomDomains();
+        };
+
+        const appendCustomDomains = () => {
+            if (!builtinPlatformsList) return;
+            updateSidebarSummary();
+
+            pendingCustomSites.forEach((site, idx) => {
+                const row = document.createElement('div');
+                row.className = 'platform-row platform-row-custom';
+
+                const info = document.createElement('div');
+                info.className = 'platform-info';
+                const nameLine = document.createElement('div');
+                nameLine.className = 'platform-name';
+                nameLine.textContent = site.domain;
+                info.appendChild(nameLine);
+
+                const controls = document.createElement('div');
+                controls.className = 'platform-controls';
+
+                const delBtn = document.createElement('button');
+                delBtn.type = 'button';
+                delBtn.className = 'sound-delete-btn platform-delete-btn';
+                delBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>';
+                delBtn.setAttribute('aria-label', `Remove ${site.domain}`);
+                delBtn.title = 'Remove custom domain';
+                delBtn.addEventListener('click', () => {
+                    pendingCustomSites.splice(idx, 1);
+                    renderBuiltinPlatforms();
+                    checkLimitIncrease();
+                });
+
+                const toggleLabel = document.createElement('label');
+                toggleLabel.className = 'toggle-switch';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = Boolean(site.enabled);
+                checkbox.addEventListener('change', () => {
+                    pendingCustomSites[idx].enabled = checkbox.checked;
+                    updateSidebarSummary();
+                    checkLimitIncrease();
+                });
+                const slider = document.createElement('span');
+                slider.className = 'toggle-slider';
+                toggleLabel.appendChild(checkbox);
+                toggleLabel.appendChild(slider);
+
+                controls.appendChild(delBtn);
+                controls.appendChild(toggleLabel);
+                row.appendChild(info);
+                row.appendChild(controls);
+                builtinPlatformsList.appendChild(row);
+            });
+        };
+
+        const renderCustomDomains = () => {
+            renderBuiltinPlatforms();
+        };
+
+        const addCustomDomain = () => {
+            if (!customDomainInput) return;
+            const domain = DoomPlatforms.normalizeDomain(customDomainInput.value);
+            if (!domain) {
+                showToast('Enter a valid domain like news.ycombinator.com', '#ff5252', 3000);
+                return;
+            }
+
+            const isBuiltin = DoomPlatforms.BUILTIN_PLATFORMS.some(p =>
+                p.hosts.includes(domain) || p.hosts.includes('www.' + domain) || (p.hostSuffix && domain.endsWith(p.hostSuffix))
+            );
+            if (isBuiltin) {
+                showToast(`${domain} is already in Built-in Platforms!`, '#ffdd00', 3000);
+                return;
+            }
+
+            if (pendingCustomSites.some(s => s.domain === domain)) {
+                showToast(`${domain} is already added.`, '#ffdd00', 2600);
+                return;
+            }
+
+            const origins = [`*://${domain}/*`, `*://*.${domain}/*`];
+            chrome.permissions.request({ origins }, (granted) => {
+                if (!granted) {
+                    showToast(`Permission denied for ${domain}`, '#ff5252', 3000);
+                    return;
+                }
+
+                const newSite = {
+                    id: 'custom_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+                    domain,
+                    enabled: true
+                };
+                pendingCustomSites.push(newSite);
+                savedCustomSites.push({ ...newSite });
+                customDomainInput.value = '';
+                renderCustomDomains();
+
+                // Adding a site tightens protection, so persist immediately & register dynamic script
+                chrome.storage.local.set({ customSites: pendingCustomSites }, () => {
+                    chrome.runtime.sendMessage({ action: 'syncCustomScripts' }, () => {
+                        void chrome.runtime.lastError;
+                    });
+                    showToast(`Added ${domain} to Doom Scolder!`, '#4caf50', 2600);
+                });
+            });
+        };
+
+        if (addCustomDomainBtn) {
+            addCustomDomainBtn.addEventListener('click', addCustomDomain);
+        }
+        if (customDomainInput) {
+            customDomainInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addCustomDomain();
+                }
+            });
+        }
+        if (sitesSaveBtn) {
+            sitesSaveBtn.addEventListener('click', () => {
+                if (isWeakeningRules() && !mazeCompleted) {
+                    playBuzzerSound();
+                    switchSettingsTab('limits');
+                    enableLockdownMode();
+                    showToast(LIMIT_INCREASE_WARNING, '#ff5252', 3600);
+                    return;
+                }
+                saveSettings();
+            });
+        }
 
         // ==========================================
         // Stepper (+ / -) Control with Long-Press
@@ -1639,16 +2087,28 @@
         // Settings Persistence (Chrome Storage)
         // ==========================================
         function loadSettings() {
-            chrome.storage.local.get(['shortsBlockLimit', 'shortsLimit', 'scoldingEnabled', 'scoldSounds'], (result) => {
-                savedBlockLimit = result.shortsBlockLimit || 10;
-                savedScoldLimit = result.shortsLimit || 2;
+            chrome.storage.local.get([
+                'blockLimitMinutes',
+                'scoldingEnabled',
+                'manualResetOnly',
+                'scoldSounds',
+                'platformSettings',
+                'customSites'
+            ], (result) => {
+                savedBlockLimit = Number.isFinite(result.blockLimitMinutes) ? result.blockLimitMinutes : 20;
+                savedManualResetOnly = Boolean(result.manualResetOnly);
+                savedPlatformSettings = DoomPlatforms.mergePlatformSettings(result.platformSettings);
+                pendingPlatformSettings = JSON.parse(JSON.stringify(savedPlatformSettings));
+                savedCustomSites = Array.isArray(result.customSites) ? JSON.parse(JSON.stringify(result.customSites)) : [];
+                pendingCustomSites = JSON.parse(JSON.stringify(savedCustomSites));
 
                 blockLimitInput.value = savedBlockLimit;
-                scoldLimitInput.value = savedScoldLimit;
-                scoldingEnabledCheckbox.checked = result.scoldingEnabled || false;
+                scoldingEnabledCheckbox.checked = typeof result.scoldingEnabled === 'boolean' ? result.scoldingEnabled : true;
+                if (manualResetCheckbox) {
+                    manualResetCheckbox.checked = savedManualResetOnly;
+                }
 
                 blockLimitInput.dispatchEvent(new Event('input', { bubbles: true }));
-                scoldLimitInput.dispatchEvent(new Event('input', { bubbles: true }));
 
                 if (result.scoldSounds && Array.isArray(result.scoldSounds) && result.scoldSounds.length > 0) {
                     currentSounds = result.scoldSounds;
@@ -1656,6 +2116,9 @@
                     currentSounds = JSON.parse(JSON.stringify(DEFAULT_SOUNDS));
                 }
                 renderSoundList();
+                renderBuiltinPlatforms();
+                renderCustomDomains();
+                updateSidebarSummary();
 
                 disableLockdownMode();
             });
@@ -1663,77 +2126,91 @@
 
         const triggerSavedFeedback = (customToastMsg = null) => {
             saveButton.classList.add('saved-success');
-            saveButton.textContent = '✓ Settings Saved!';
+            saveButton.textContent = 'Saved';
+            if (sitesSaveBtn) {
+                sitesSaveBtn.textContent = 'Saved';
+                sitesSaveBtn.classList.remove('needs-slalom');
+            }
 
             if (customToastMsg) {
-                showToast(customToastMsg, '#4caf50', 2500);
+                showToast(customToastMsg, '#84cc16', 2500);
             }
 
             setTimeout(() => {
                 saveButton.classList.remove('saved-success');
                 if (!isLockdownActive || mazeCompleted) {
-                    saveButton.textContent = 'Save Settings';
+                    saveButton.textContent = 'Save';
+                }
+                if (sitesSaveBtn) {
+                    sitesSaveBtn.textContent = 'Save';
                 }
             }, 1800);
         };
 
         function saveSettings() {
             const blockLimit = parseInt(blockLimitInput.value, 10);
-            const scoldLimit = parseInt(scoldLimitInput.value, 10);
             const scoldingEnabled = scoldingEnabledCheckbox.checked;
+            const manualResetOnly = manualResetCheckbox ? manualResetCheckbox.checked : false;
 
-            if (isNaN(blockLimit) || isNaN(scoldLimit) || blockLimit < 1 || scoldLimit < 1) {
-                showToast(`${WARNING_ICON_SVG}<span>Limits must be valid numbers of at least 1.</span>`, '#ff5252', 3200);
+            if (isNaN(blockLimit) || blockLimit < 1) {
+                showToast(`${WARNING_ICON_SVG}<span>Limit must be a valid number of at least 1 minute.</span>`, '#ef4444', 3200);
                 return;
             }
 
-            if (blockLimit > 100 || scoldLimit > 100) {
-                showToast('Bro, over 100 shorts? You need a therapist, not a browser extension. 🤡', '#ff5252', 3500);
+            if (blockLimit > 120) {
+                showOverLimitMock(true);
+                blockLimitInput.value = 120;
+                checkLimitIncrease();
+                updateSidebarSummary();
                 return;
             }
 
-            if (scoldLimit >= blockLimit) {
-                showToast(`${WARNING_ICON_SVG}<span>Scold limit must be less than the Block limit!</span>`, '#ff5252', 3200);
-                return;
-            }
-
-            // Lockdown enforcement: If limit increased, must have completed the slalom
-            const isLimitIncreased = blockLimit > savedBlockLimit || scoldLimit > savedScoldLimit;
-            if (isLimitIncreased && !mazeCompleted) {
+            const isWeakening = isWeakeningRules();
+            if (isWeakening && !mazeCompleted) {
                 playBuzzerSound();
-                showToast(LIMIT_INCREASE_WARNING, '#ff5252', 3600);
+                switchSettingsTab('limits');
+                enableLockdownMode();
+                showToast(LIMIT_INCREASE_WARNING, '#ef4444', 3600);
                 return;
             }
 
-            chrome.storage.local.get(['shortsCount', 'shortsBlockLimit'], (result) => {
-                const currentCount = result.shortsCount || 0;
-                const currentLimit = result.shortsBlockLimit || 10;
+            chrome.storage.local.get(['doomSeconds', 'blockLimitMinutes'], (result) => {
+                const currentSeconds = result.doomSeconds || 0;
+                const currentLimitSeconds = (result.blockLimitMinutes || 20) * 60;
 
-                // Prevent loophole: increasing limit while blocked
-                if (currentCount >= currentLimit && blockLimit > currentLimit) {
-                    showToast('🛑 Nice try! You are currently blocked. Pass mindfulness test in popup first.', '#ff5252', 3500);
+                // Prevent loophole: weakening rules while blocked
+                if (currentSeconds >= currentLimitSeconds && isWeakening) {
+                    showToast('You are currently blocked. Pass the mindfulness check in the popup first.', '#ef4444', 3500);
                     return;
                 }
 
-                const wasIncreased = isLimitIncreased;
+                const wasWeakened = isWeakening;
                 const wasDecreased = blockLimit < savedBlockLimit;
 
                 chrome.storage.local.set({
-                    shortsBlockLimit: blockLimit,
-                    shortsLimit: scoldLimit,
+                    blockLimitMinutes: blockLimit,
                     scoldingEnabled: scoldingEnabled,
-                    scoldSounds: currentSounds
+                    manualResetOnly: manualResetOnly,
+                    scoldSounds: currentSounds,
+                    platformSettings: pendingPlatformSettings,
+                    customSites: pendingCustomSites
                 }, () => {
                     savedBlockLimit = blockLimit;
-                    savedScoldLimit = scoldLimit;
+                    savedManualResetOnly = manualResetOnly;
+                    savedPlatformSettings = JSON.parse(JSON.stringify(pendingPlatformSettings));
+                    savedCustomSites = JSON.parse(JSON.stringify(pendingCustomSites));
+
+                    chrome.runtime.sendMessage({ action: 'syncCustomScripts' }, () => {
+                        void chrome.runtime.lastError;
+                    });
 
                     disableLockdownMode();
 
-                    let toastFlavor = null;
+                    let toastFlavor = 'Settings saved!';
                     if (wasDecreased) {
-                        toastFlavor = '🫡 Respect. Lowering your limit!';
-                    } else if (wasIncreased) {
-                        toastFlavor = 'Saved... remember the shame you endured.';
+                        toastFlavor = 'Respect. Limit tightened.';
+                    } else if (wasWeakened) {
+                        toastFlavor = 'Saved. Remember the shame you endured.';
                     }
                     triggerSavedFeedback(toastFlavor);
                 });

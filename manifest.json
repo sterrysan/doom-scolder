@@ -1,20 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "Doom Scolder - YouTube Shorts Blocker",
+  "name": "Doom Scolder",
   "short_name": "Doom Scolder",
-  "version": "1.0.0",
-  "description": "Stop doomscrolling! Block shorts and optionally get an audible scolding after watching too many YouTube Shorts.",
+  "version": "2.0.0",
+  "description": "Stop doomscrolling! Enforce a global daily budget across YouTube, Reddit, Instagram, X, TikTok & more with audible scolds and anti-cheat.",
   "permissions": [
     "storage",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
   ],
   "web_accessible_resources": [
     {
       "resources": [
-        "sounds/*"
+        "sounds/*",
+        "icons/*.png"
       ],
       "matches": [
-        "*://www.youtube.com/*"
+        "<all_urls>"
       ]
     }
   ],
@@ -24,9 +29,24 @@
   "content_scripts": [
     {
       "matches": [
-        "*://www.youtube.com/*"
+        "*://*.youtube.com/*",
+        "*://*.facebook.com/*",
+        "*://*.instagram.com/*",
+        "*://*.reddit.com/*",
+        "*://*.x.com/*",
+        "*://*.twitter.com/*",
+        "*://*.tiktok.com/*",
+        "*://*.linkedin.com/*",
+        "*://*.pinterest.com/*",
+        "*://*.threads.net/*",
+        "*://*.threads.com/*",
+        "*://*.bsky.app/*",
+        "*://*.discord.com/*"
       ],
       "js": [
+        "platforms.js",
+        "sparks.js",
+        "effects.js",
         "content.js"
       ]
     }
@@ -35,6 +55,7 @@
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
@@ -42,6 +63,7 @@
   "options_page": "options.html",
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }

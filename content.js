@@ -1,354 +1,817 @@
-// content.js
+// content.js - Universal DOM-Agnostic Doomscrolling Tracker, Scolder & Blocker
 
-// Regular expression to match YouTube Shorts URLs
-const SHORTS_URL_REGEX = /^https:\/\/(www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/;
-let previousUrl = window.location.href;
-let shortsCountDisplay = null; // Reference to the injected UI element
-let blockingOverlay = null; // Reference to the blocking overlay
-let wasOnShortsPage = false; // Track if the tab was previously on a Shorts page
-let localShortsCount = null; // Instantly tracks count to prevent race conditions
-let enforceBlockInterval = null; // Interval to prevent DevTools deletion
-let isBlocked = false; // Central state for blocking
+(function () {
+    if (window.__doomScolderLoaded) return;
+    window.__doomScolderLoaded = true;
 
-/**
- * Creates and injects a small UI element to display the shorts count.
- */
-function injectShortsCountDisplay() {
-    if (shortsCountDisplay) return; // Only inject once
+    const ACTIVE_IDLE_WINDOW_MS = 45000;
+    const PING_INTERVAL_MS = 2000;
 
-    shortsCountDisplay = document.createElement('div');
-    shortsCountDisplay.id = 'yt-shorts-scolder-display';
-    shortsCountDisplay.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        background-color: #d32f2f; /* YouTube red */
-        color: white;
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-family: 'Roboto', sans-serif;
-        font-size: 14px;
-        font-weight: bold;
-        z-index: 10000;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        display: none; /* Hide by default */
-        pointer-events: none; /* Make it non-interactive */
-        opacity: 0.9;
-    `;
-    document.body.appendChild(shortsCountDisplay);
-    console.log("Doom Scolder: Injected UI display.");
-}
+    let cachedPlatformSettings = null;
+    let cachedCustomSites = [];
+    let currentMatch = { matched: false };
+    let lastUrl = '';
 
-/**
- * Creates and injects a full-screen blocking overlay.
- */
-function injectBlockingOverlay() {
-    if (blockingOverlay && document.getElementById('yt-shorts-scolder-block-overlay')) return;
+    let lastInteractionAt = Date.now();
+    let isBlocked = false;
+    let currentDoomSeconds = 0;
+    let currentDailySeconds = 0;
+    let currentBlockLimitSeconds = 20 * 60;
 
-    blockingOverlay = document.createElement('div');
-    blockingOverlay.id = 'yt-shorts-scolder-block-overlay';
-    blockingOverlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
-        background-color: rgba(13, 13, 18, 0.95);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px);
-        color: #e2e2e9;
-        z-index: 9999999;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        font-family: 'Inter', -apple-system, sans-serif;
-        display: none;
-    `;
-    
-    const message = document.createElement('h1');
-    message.textContent = "Shorts Limit Reached! Get back to work.";
-    message.style.cssText = `
-        margin-bottom: 30px;
-        font-size: 42px;
-        font-weight: 700;
-        color: #ff4b4b;
-        text-shadow: 0 4px 12px rgba(0,0,0,0.5);
-    `;
-    
-    const homeButton = document.createElement('button');
-    homeButton.textContent = "Go to YouTube Home";
-    homeButton.style.cssText = `
-        padding: 16px 32px;
-        background-color: #d32f2f;
-        color: white;
-        border: none;
-        border-radius: 12px;
-        font-size: 20px;
-        cursor: pointer;
-        font-weight: 700;
-        box-shadow: 0 8px 24px rgba(211, 47, 47, 0.3);
-        transition: all 0.2s ease;
-    `;
-    
-    // Add hover effect programmatically
-    homeButton.addEventListener('mouseenter', () => {
-        homeButton.style.transform = 'translateY(-2px)';
-        homeButton.style.boxShadow = '0 12px 28px rgba(211, 47, 47, 0.5)';
-    });
-    homeButton.addEventListener('mouseleave', () => {
-        homeButton.style.transform = 'translateY(0)';
-        homeButton.style.boxShadow = '0 8px 24px rgba(211, 47, 47, 0.3)';
-    });
-    homeButton.addEventListener('click', () => {
-        // Just navigate to home, do NOT reset the count so the blocker persists!
-        window.location.href = "https://www.youtube.com";
-    });
-    
-    blockingOverlay.appendChild(message);
-    blockingOverlay.appendChild(homeButton);
-    document.body.appendChild(blockingOverlay);
-}
+    // Autoplay fallback queue & audio boost context
+    let pendingScoldSound = null;
+    let scoldAudioCtx = null;
+    const mediaDataUrlCache = {};
+    let hudBadge = null;
+    let scoldBanner = null;
+    let scoldBannerTimer = null;
+    let blockingOverlay = null;
+    let overlaySparkController = null;
+    let enforceInterval = null;
+    let pingInterval = null;
 
-    function pauseAllVideos() {
-        document.querySelectorAll('video').forEach(v => {
-            if (!v.paused) v.pause();
+    function formatClock(totalSec) {
+        const s = Math.max(0, Math.floor(totalSec || 0));
+        const hrs = Math.floor(s / 3600);
+        const mins = Math.floor((s % 3600) / 60);
+        const secs = s % 60;
+        if (hrs > 0) {
+            return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    function ensureBody(cb) {
+        if (document.body) {
+            cb();
+        } else {
+            document.addEventListener('DOMContentLoaded', cb, { once: true });
+        }
+    }
+
+    function injectHudBadge() {
+        if (hudBadge && document.body && document.body.contains(hudBadge)) return;
+        if (!document.body) return;
+
+        hudBadge = document.createElement('div');
+        hudBadge.id = 'doom-scolder-hud';
+        hudBadge.style.cssText = `
+            position: fixed;
+            bottom: 18px;
+            right: 18px;
+            background: rgba(20, 20, 24, 0.92);
+            border: 1px solid rgba(255, 75, 75, 0.55);
+            color: #ffffff;
+            padding: 7px 12px;
+            border-radius: 999px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            z-index: 2147483640;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+            display: none;
+            pointer-events: none;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        `;
+        document.body.appendChild(hudBadge);
+    }
+
+    function updateHud() {
+        if (!hudBadge) injectHudBadge();
+        if (!hudBadge) return;
+
+        if (!currentMatch.matched || isBlocked) {
+            hudBadge.style.display = 'none';
+            return;
+        }
+
+        const ratio = currentBlockLimitSeconds > 0 ? currentDoomSeconds / currentBlockLimitSeconds : 0;
+        const borderColor = ratio >= 0.7 ? '#ffdd00' : '#ff4b4b';
+        hudBadge.style.borderColor = borderColor;
+        hudBadge.textContent = `${currentMatch.platformName}: ${formatClock(currentDoomSeconds)} / ${formatClock(currentBlockLimitSeconds)}`;
+        hudBadge.style.display = 'block';
+    }
+
+    function showScoldBanner(text) {
+        ensureBody(() => {
+            if (!scoldBanner || !document.body.contains(scoldBanner)) {
+                scoldBanner = document.createElement('div');
+                scoldBanner.id = 'doom-scolder-toast';
+                scoldBanner.style.cssText = `
+                    position: fixed;
+                    top: 18px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: linear-gradient(135deg, #b91c1c, #7f1d1d);
+                    color: #ffffff;
+                    border: 1px solid rgba(255, 255, 255, 0.25);
+                    padding: 12px 20px;
+                    border-radius: 12px;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    font-size: 14px;
+                    font-weight: 800;
+                    z-index: 2147483646;
+                    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
+                    pointer-events: none;
+                    display: none;
+                    text-align: center;
+                `;
+                document.body.appendChild(scoldBanner);
+            }
+
+            scoldBanner.textContent = text;
+            scoldBanner.style.display = 'block';
+            clearTimeout(scoldBannerTimer);
+            scoldBannerTimer = setTimeout(() => {
+                if (scoldBanner) scoldBanner.style.display = 'none';
+            }, 3500);
+        });
+    }
+
+    async function playBoostedBuffer(audioSrc, onDone) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return 'fallback';
+
+        if (!scoldAudioCtx) {
+            scoldAudioCtx = new AudioCtx();
+        }
+        if (scoldAudioCtx.state === 'suspended') {
+            try {
+                await scoldAudioCtx.resume();
+            } catch (e) { }
+        }
+        if (scoldAudioCtx.state !== 'running') {
+            return 'blocked';
+        }
+
+        const resp = await fetch(audioSrc);
+        if (!resp.ok) return 'fallback';
+        const arrayBuf = await resp.arrayBuffer();
+        const audioBuf = await scoldAudioCtx.decodeAudioData(arrayBuf);
+
+        const source = scoldAudioCtx.createBufferSource();
+        source.buffer = audioBuf;
+
+        // Boost quiet recordings and clamp peaks with a limiter
+        const gainNode = scoldAudioCtx.createGain();
+        gainNode.gain.value = 2.6;
+
+        const compressor = scoldAudioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -3;
+        compressor.knee.value = 6;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.002;
+        compressor.release.value = 0.15;
+
+        source.connect(gainNode);
+        gainNode.connect(compressor);
+        compressor.connect(scoldAudioCtx.destination);
+
+        const fallbackTimer = setTimeout(onDone, Math.max(6500, Math.ceil(audioBuf.duration * 1000) + 300));
+        source.onended = () => {
+            clearTimeout(fallbackTimer);
+            onDone();
+        };
+        source.start(0);
+        return 'played';
+    }
+
+    function isVideoMedia(sound) {
+        if (!sound) return false;
+        if (sound.mediaType === 'video') return true;
+        if (sound.dataUrl && sound.dataUrl.startsWith('data:video/')) return true;
+        return /\.(mp4|webm|mov|m4v)$/i.test(sound.name || sound.url || '');
+    }
+
+    function playScoldVideo(mediaSrc, sound, reasonLabel, restoreVolumes) {
+        const existing = document.getElementById('doom-scolder-video-overlay');
+        if (existing) existing.remove();
+
+        const wrap = document.createElement('div');
+        wrap.id = 'doom-scolder-video-overlay';
+        wrap.style.cssText = [
+            'position:fixed',
+            'top:50%',
+            'left:50%',
+            'transform:translate(-50%,-50%) scale(0.75)',
+            'opacity:0',
+            'transition:transform 4.8s cubic-bezier(0.16,1,0.3,1),opacity 0.35s ease',
+            'will-change:transform,opacity',
+            'z-index:2147483647',
+            'width:min(520px,68vw)',
+            'background:#141417',
+            'border:2px solid #ef4444',
+            'border-radius:16px',
+            'padding:12px',
+            'box-shadow:0 24px 60px rgba(0,0,0,0.88),0 0 36px rgba(239,68,68,0.35)',
+            'display:flex',
+            'flex-direction:column',
+            'gap:10px',
+            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif'
+        ].join(';');
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;color:#f87171;font-size:13px;font-weight:700;';
+        header.textContent = reasonLabel || 'Stop doomscrolling! Get back to work.';
+
+        const video = document.createElement('video');
+        video.src = mediaSrc;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.volume = 1.0;
+        video.style.cssText = 'width:100%;max-height:55vh;border-radius:10px;background:#000;display:block;';
+
+        let cleaned = false;
+        const cleanup = () => {
+            if (cleaned) return;
+            cleaned = true;
+            try { video.pause(); } catch (e) { }
+            wrap.remove();
+            restoreVolumes();
+        };
+
+        const fallbackTimer = setTimeout(cleanup, 15000);
+        video.onended = () => { clearTimeout(fallbackTimer); cleanup(); };
+        video.onerror = () => { clearTimeout(fallbackTimer); cleanup(); };
+
+        wrap.appendChild(header);
+        wrap.appendChild(video);
+        (document.body || document.documentElement).appendChild(wrap);
+
+        video.play().then(() => {
+            pendingScoldSound = null;
+            requestAnimationFrame(() => {
+                wrap.style.opacity = '1';
+                wrap.style.transform = 'translate(-50%,-50%) scale(1.42)';
+            });
+        }).catch(() => {
+            clearTimeout(fallbackTimer);
+            cleanup();
+            pendingScoldSound = sound;
+        });
+    }
+
+    function resolveMediaSrc(sound) {
+        if (sound.dataUrl) return Promise.resolve(sound.dataUrl);
+        const relUrl = sound.url || '';
+        if (mediaDataUrlCache[relUrl]) {
+            return Promise.resolve(mediaDataUrlCache[relUrl]);
+        }
+        return new Promise((resolve) => {
+            chrome.runtime.sendMessage({ action: 'fetchMediaDataUrl', url: relUrl }, (resp) => {
+                if (!chrome.runtime.lastError && resp && resp.dataUrl) {
+                    mediaDataUrlCache[relUrl] = resp.dataUrl;
+                    resolve(resp.dataUrl);
+                } else {
+                    resolve(chrome.runtime.getURL(relUrl));
+                }
+            });
+        });
+    }
+
+    function playScoldAudio(sound, reasonLabel) {
+        if (!sound) return;
+        showScoldBanner(reasonLabel || 'Stop doomscrolling! Get back to work.');
+
+        try {
+            const mediaEls = Array.from(document.querySelectorAll('video, audio'));
+            const prevStates = mediaEls.map(el => ({ el, vol: el.volume, muted: el.muted }));
+            let restored = false;
+
+            const restoreVolumes = () => {
+                if (restored) return;
+                restored = true;
+                prevStates.forEach(({ el, vol, muted }) => {
+                    try {
+                        el.volume = vol;
+                        el.muted = muted;
+                    } catch (e) { }
+                });
+            };
+
+            prevStates.forEach(({ el }) => {
+                try {
+                    el.volume = 0;
+                    el.muted = true;
+                } catch (e) { }
+            });
+
+            resolveMediaSrc(sound).then((audioSrc) => {
+                if (isVideoMedia(sound)) {
+                    playScoldVideo(audioSrc, sound, reasonLabel, restoreVolumes);
+                    return;
+                }
+
+                const fallbackHtmlAudio = () => {
+                    const audio = new Audio(audioSrc);
+                    audio.volume = 1.0;
+                    const fallbackTimer = setTimeout(restoreVolumes, 6500);
+
+                    audio.onended = () => {
+                        clearTimeout(fallbackTimer);
+                        restoreVolumes();
+                    };
+                    audio.onerror = () => {
+                        clearTimeout(fallbackTimer);
+                        restoreVolumes();
+                    };
+
+                    audio.play().then(() => {
+                        pendingScoldSound = null;
+                    }).catch(() => {
+                        clearTimeout(fallbackTimer);
+                        restoreVolumes();
+                        // Queue sound for the user's next click/keypress if autoplay blocked
+                        pendingScoldSound = sound;
+                    });
+                };
+
+                if (!audioSrc.startsWith('data:')) {
+                    fallbackHtmlAudio();
+                    return;
+                }
+
+                playBoostedBuffer(audioSrc, restoreVolumes).then((status) => {
+                    if (status === 'played') {
+                        pendingScoldSound = null;
+                    } else if (status === 'blocked') {
+                        restoreVolumes();
+                        pendingScoldSound = sound;
+                    } else {
+                        fallbackHtmlAudio();
+                    }
+                }).catch(() => {
+                    fallbackHtmlAudio();
+                });
+            });
+        } catch (e) {
+            console.warn('Doom Scolder audio error:', e);
+        }
+    }
+
+    function flushPendingAudio() {
+        if (!pendingScoldSound) return;
+        const sound = pendingScoldSound;
+        pendingScoldSound = null;
+        playScoldAudio(sound, 'Stop doomscrolling!');
+    }
+
+    function pauseAllMedia() {
+        document.querySelectorAll('video, audio').forEach((el) => {
+            try {
+                if (!el.paused) el.pause();
+                if (!el.muted) el.muted = true;
+            } catch (e) { }
+        });
+    }
+
+    function injectBlockingOverlay() {
+        if (!document.body) return;
+        if (blockingOverlay && document.getElementById('doom-scolder-block-overlay')) return;
+
+        if (!document.getElementById('doom-scolder-overlay-anim-style')) {
+            const styleEl = document.createElement('style');
+            styleEl.id = 'doom-scolder-overlay-anim-style';
+            styleEl.textContent = `
+                @keyframes doomOverlayFlicker {
+                    0%, 72%, 76%, 80%, 100% { opacity: 1; transform: translate(0, 0) scale(1); }
+                    73% { opacity: 0.7; transform: translate(-2px, 1px) scale(1.01); }
+                    77% { opacity: 0.45; transform: translate(2px, -1px) scale(0.99); }
+                    81% { opacity: 0.85; transform: translate(-1px, 0) scale(1); }
+                }
+            `;
+            (document.head || document.documentElement).appendChild(styleEl);
+        }
+
+        blockingOverlay = document.createElement('div');
+        blockingOverlay.id = 'doom-scolder-block-overlay';
+        blockingOverlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(11, 11, 15, 0.96);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            color: #e2e2e9;
+            z-index: 2147483647;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 24px;
+            box-sizing: border-box;
+            text-align: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: hidden;
+        `;
+
+        const sparkCanvas = document.createElement('canvas');
+        sparkCanvas.id = 'doom-scolder-overlay-sparks';
+        sparkCanvas.style.cssText = `
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        `;
+
+        const angryIcon = document.createElement('img');
+        angryIcon.id = 'doom-scolder-overlay-icon';
+        angryIcon.alt = 'Doom Scolder Angry';
+        resolveMediaSrc({ url: 'icons/angry128.png' }).then((src) => {
+            if (src && src.startsWith('data:')) {
+                angryIcon.src = src;
+            }
+        });
+        angryIcon.style.cssText = `
+            width: 84px;
+            height: 84px;
+            border-radius: 50%;
+            margin-bottom: 20px;
+            position: relative;
+            z-index: 2;
+            filter: drop-shadow(0 0 18px rgba(255, 40, 40, 0.85));
+            animation: doomOverlayFlicker 2.1s infinite;
+        `;
+
+        const title = document.createElement('h1');
+        title.textContent = 'Doomscroll Limit Reached! Get back to work.';
+        title.style.cssText = `
+            margin: 0 0 14px 0;
+            font-size: 36px;
+            font-weight: 800;
+            color: #ff4b4b;
+            text-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            max-width: 680px;
+            line-height: 1.2;
+            position: relative;
+            z-index: 2;
+        `;
+
+        const subtitle = document.createElement('p');
+        subtitle.id = 'doom-scolder-block-subtitle';
+        subtitle.style.cssText = `
+            margin: 0 0 28px 0;
+            font-size: 16px;
+            color: #a1a1aa;
+            max-width: 520px;
+            line-height: 1.5;
+            position: relative;
+            z-index: 2;
+        `;
+
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = 'Close Tab';
+        closeBtn.style.cssText = `
+            padding: 15px 34px;
+            background: linear-gradient(135deg, #d32f2f, #b71c1c);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 8px 24px rgba(211, 47, 47, 0.35);
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            position: relative;
+            z-index: 2;
+        `;
+
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.transform = 'translateY(-2px)';
+            closeBtn.style.boxShadow = '0 12px 28px rgba(211, 47, 47, 0.55)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.transform = 'translateY(0)';
+            closeBtn.style.boxShadow = '0 8px 24px rgba(211, 47, 47, 0.35)';
+        });
+        closeBtn.addEventListener('click', () => {
+            chrome.runtime.sendMessage({ action: 'closeTab' }, () => {
+                void chrome.runtime.lastError;
+            });
+        });
+
+        blockingOverlay.appendChild(sparkCanvas);
+        blockingOverlay.appendChild(angryIcon);
+        blockingOverlay.appendChild(title);
+        blockingOverlay.appendChild(subtitle);
+        blockingOverlay.appendChild(closeBtn);
+        document.body.appendChild(blockingOverlay);
+
+        if (overlaySparkController) {
+            overlaySparkController.destroy();
+            overlaySparkController = null;
+        }
+        if (window.DoomSparks) {
+            overlaySparkController = window.DoomSparks.createSparkController(sparkCanvas, {
+                getAnchors: (cRect) => {
+                    const anchors = [];
+                    const ir = angryIcon.getBoundingClientRect();
+                    if (ir.width > 0) {
+                        anchors.push({
+                            x: (ir.left + ir.right) / 2 - cRect.left,
+                            y: (ir.top + ir.bottom) / 2 - cRect.top,
+                            r: ir.width / 2
+                        });
+                    }
+                    return anchors;
+                }
+            });
+        }
+    }
+
+    function updateOverlaySubtitle() {
+        const sub = document.getElementById('doom-scolder-block-subtitle');
+        if (sub) {
+            const minsLimit = Math.round(currentBlockLimitSeconds / 60);
+            sub.textContent = `Close this tab or complete the mindfulness test in the Doom Scolder popup.`;
+        }
+    }
+
+    function computeEffectStage() {
+        if (!currentMatch.matched || currentBlockLimitSeconds <= 0) return 'none';
+        const ratio = currentDoomSeconds / currentBlockLimitSeconds;
+        if (ratio >= 1.0) return 'climax';
+        if (ratio >= 0.84) return 'more_missiles';
+        if (ratio >= 0.70) return 'few_missiles';
+        return 'none';
+    }
+
+    function syncEffectsStage(stageOverride) {
+        if (!window.DoomEffects) return;
+        const stage = currentMatch.matched ? (stageOverride || computeEffectStage()) : 'none';
+        const progress = currentBlockLimitSeconds > 0
+            ? Math.min(1, currentDoomSeconds / currentBlockLimitSeconds)
+            : 0;
+        window.DoomEffects.setStage(stage, {
+            progress,
+            resolveAudio: (path) => resolveMediaSrc({ url: path }),
+            onCloseTab: () => {
+                chrome.runtime.sendMessage({ action: 'closeTab' }, () => {
+                    void chrome.runtime.lastError;
+                });
+            }
         });
     }
 
     function startEnforcingBlock() {
         isBlocked = true;
-        if (!blockingOverlay || !document.getElementById('yt-shorts-scolder-block-overlay')) {
-            injectBlockingOverlay();
-        }
-        blockingOverlay.style.display = 'flex';
-        document.body.style.overflow = 'hidden'; // disable scroll
-        pauseAllVideos(); // Mute and stop playback instantly
+        ensureBody(() => {
+            if (window.DoomEffects) {
+                syncEffectsStage('climax');
+            } else {
+                injectBlockingOverlay();
+                if (blockingOverlay) {
+                    updateOverlaySubtitle();
+                    blockingOverlay.style.display = 'flex';
+                }
+                if (overlaySparkController) overlaySparkController.setMode('angry');
+            }
+            if (document.documentElement) document.documentElement.style.overflow = 'hidden';
+            if (document.body) document.body.style.overflow = 'hidden';
+            pauseAllMedia();
+            updateHud();
+        });
 
-        // Anti-DevTools Enforcement
-        if (!enforceBlockInterval) {
-            enforceBlockInterval = setInterval(() => {
-                if (isBlocked) {
-                    if (!document.getElementById('yt-shorts-scolder-block-overlay')) {
-                        console.log("Doom Scolder: Overlay deletion detected. Re-injecting.");
-                        blockingOverlay = null; // force recreation
-                        injectBlockingOverlay();
+        if (!enforceInterval) {
+            enforceInterval = setInterval(() => {
+                if (!isBlocked) return;
+                if (window.DoomEffects) {
+                    if (!document.getElementById('doom-scolder-fx-layer')) {
+                        syncEffectsStage('climax');
+                    }
+                } else if (!document.getElementById('doom-scolder-block-overlay')) {
+                    blockingOverlay = null;
+                    injectBlockingOverlay();
+                    if (blockingOverlay) {
+                        updateOverlaySubtitle();
                         blockingOverlay.style.display = 'flex';
                     }
-                    if (document.body.style.overflow !== 'hidden') {
-                        document.body.style.overflow = 'hidden';
-                    }
-                    pauseAllVideos(); // Constantly enforce pause in case they hit spacebar
+                    if (overlaySparkController) overlaySparkController.setMode('angry');
                 }
-            }, 1000);
+                if (document.documentElement && document.documentElement.style.overflow !== 'hidden') {
+                    document.documentElement.style.overflow = 'hidden';
+                }
+                if (document.body && document.body.style.overflow !== 'hidden') {
+                    document.body.style.overflow = 'hidden';
+                }
+                pauseAllMedia();
+            }, 500);
         }
     }
 
-function stopEnforcingBlock() {
-    isBlocked = false;
-    if (blockingOverlay) {
-        blockingOverlay.style.display = 'none';
-        document.body.style.overflow = ''; // enable scroll
-    }
-    if (enforceBlockInterval) {
-        clearInterval(enforceBlockInterval);
-        enforceBlockInterval = null;
-    }
-}
-
-/**
- * Plays the selected scold audio shouting at the user.
- * Temporarily ducks YouTube video volume for maximum shock value.
- */
-function playScoldAudio(sound) {
-    if (!sound) return;
-    try {
-        const audioSrc = sound.dataUrl || chrome.runtime.getURL(sound.url);
-        const audio = new Audio(audioSrc);
-        audio.volume = 1.0;
-
-        // Duck YouTube background audio
-        const video = document.querySelector('video');
-        let originalVol = 1.0;
-        if (video) {
-            originalVol = video.volume;
-            video.volume = Math.max(0, originalVol * 0.15);
+    function stopEnforcingBlock() {
+        isBlocked = false;
+        if (overlaySparkController) overlaySparkController.setMode('safe');
+        if (blockingOverlay) {
+            blockingOverlay.style.display = 'none';
         }
-
-        const restoreVol = () => {
-            if (video) video.volume = originalVol;
-        };
-
-        audio.onended = restoreVol;
-        audio.onerror = restoreVol;
-        setTimeout(restoreVol, 6000); // Safety timeout
-
-        audio.play().catch(err => {
-            console.warn("Doom Scolder: Audio play blocked by browser:", err);
-        });
-    } catch (e) {
-        console.error("Doom Scolder audio error:", e);
-    }
-}
-
-/**
- * Updates the text content and visibility of the injected UI element.
- * @param {number} count The current shorts count.
- * @param {number} limit The shorts limit.
- */
-function updateShortsCountDisplay(count, limit) {
-    if (shortsCountDisplay) {
-        if (window.location.pathname.startsWith('/shorts/')) {
-            shortsCountDisplay.textContent = `Shorts: ${count}/${limit}`;
-            shortsCountDisplay.style.display = 'block'; // Show if on a shorts page
-        } else {
-            shortsCountDisplay.style.display = 'none'; // Hide otherwise
+        syncEffectsStage(computeEffectStage());
+        if (document.documentElement) document.documentElement.style.overflow = '';
+        if (document.body) document.body.style.overflow = '';
+        if (enforceInterval) {
+            clearInterval(enforceInterval);
+            enforceInterval = null;
         }
-    }
-}
-
-/**
- * Handles changes in the URL to detect shorts navigation.
- */
-function handleUrlChange() {
-    const currentUrl = window.location.href;
-
-    if (currentUrl === previousUrl) {
-        return; // URL hasn't changed
+        updateHud();
     }
 
-    previousUrl = currentUrl; // Update previous URL for next check
+    // Intercept auto-resuming Shorts / Reels / TikTok videos on frame 1 while blocked
+    document.addEventListener('play', (e) => {
+        if (!isBlocked) return;
+        const target = e.target;
+        if (target && (target.tagName === 'VIDEO' || target.tagName === 'AUDIO')) {
+            try {
+                target.pause();
+                target.muted = true;
+            } catch (err) { }
+        }
+    }, true);
 
-    // Check if we are on a YouTube Shorts page
-    const match = currentUrl.match(SHORTS_URL_REGEX);
-
-    if (match) {
-        wasOnShortsPage = true;
-        const currentVideoId = match[2];
-
-        chrome.storage.local.get(['shortsCount', 'lastWatchedVideoId', 'shortsLimit', 'shortsBlockLimit', 'scoldingEnabled', 'dailyShortsCount', 'lastActiveDate'], (result) => {
-            // Speed scroll race condition fix: use localShortsCount
-            localShortsCount = (localShortsCount !== null ? localShortsCount : (result.shortsCount || 0));
-            const scoldLimit = result.shortsLimit || 2;
-            const blockLimit = result.shortsBlockLimit || 10;
-            const scoldingEnabled = result.scoldingEnabled || false;
-            const lastWatchedVideoId = result.lastWatchedVideoId || null;
-
-            if (currentVideoId !== lastWatchedVideoId) {
-                // It's a new short, so increment the local count
-                localShortsCount++;
-                console.log(`Doom Scolder: New short detected: ${currentVideoId}. Count is now ${localShortsCount}`);
-
-                let today = new Date().toDateString();
-                let dailyCount = result.dailyShortsCount || 0;
-                if (result.lastActiveDate && result.lastActiveDate !== today) {
-                    dailyCount = 0;
+    function hasPlayingVisibleVideo() {
+        const videos = document.querySelectorAll('video');
+        for (const v of videos) {
+            if (!v.paused && !v.ended && v.readyState > 2) {
+                const rect = v.getBoundingClientRect();
+                if (rect.width > 40 && rect.height > 40 && rect.bottom > 0 && rect.top < window.innerHeight) {
+                    return true;
                 }
-                dailyCount++;
-
-                if (localShortsCount >= blockLimit) {
-                    console.log("Doom Scolder: Block Limit reached.");
-                    startEnforcingBlock();
-                    // Update the count
-                    chrome.storage.local.set({ shortsCount: localShortsCount, lastWatchedVideoId: currentVideoId, dailyShortsCount: dailyCount, lastActiveDate: today });
-                    updateShortsCountDisplay(localShortsCount, blockLimit); // Update UI immediately
-                } else {
-                    stopEnforcingBlock();
-                    
-                    if (scoldingEnabled && localShortsCount % scoldLimit === 0) {
-                        console.log("Doom Scolder: Scold Limit reached. Requesting a scolding.");
-                        chrome.runtime.sendMessage({ action: "scoldUser" }, (response) => {
-                            if (chrome.runtime.lastError) return;
-                            if (response && response.sound) {
-                                playScoldAudio(response.sound);
-                            }
-                        });
-                    }
-                    
-                    // Save the new count and the current video ID
-                    chrome.storage.local.set({ shortsCount: localShortsCount, lastWatchedVideoId: currentVideoId, dailyShortsCount: dailyCount, lastActiveDate: today });
-                    updateShortsCountDisplay(localShortsCount, blockLimit); // Update UI
-                }
-                // Inform the popup about the change
-                chrome.runtime.sendMessage({ action: "updateCount" }, () => {
-                    void chrome.runtime.lastError;
-                });
-            } else {
-                // Still on the same short or navigated back to it, just update UI
-                if (localShortsCount >= blockLimit) {
-                    startEnforcingBlock();
-                } else {
-                    stopEnforcingBlock();
-                }
-                updateShortsCountDisplay(localShortsCount, blockLimit);
             }
-        });
-    } else {
-        // Not on a shorts page
-        stopEnforcingBlock();
-        
-        if (wasOnShortsPage) {
-            wasOnShortsPage = false;
-            // Removed localShortsCount = 0 and shortsCount: 0 storage set
-            // so the count persists across normal YouTube navigations.
-            chrome.storage.local.set({ lastWatchedVideoId: null });
-            chrome.storage.local.get(['shortsBlockLimit'], (result) => {
-                updateShortsCountDisplay(localShortsCount, result.shortsBlockLimit || 10);
-            });
-            console.log("Doom Scolder: Navigated away from shorts. Count preserved.");
-            // Inform the popup about the change
-            chrome.runtime.sendMessage({ action: "updateCount" }, () => {
-                void chrome.runtime.lastError;
-            });
-        } else {
-            // Loaded a non-Shorts page, but wasn't on Shorts before in this tab. Just hide UI.
-            updateShortsCountDisplay(localShortsCount || 0, 10);
         }
+        return false;
     }
-}
 
-// Observe changes to the DOM to detect URL changes in YouTube's SPA
-const bodyObserver = new MutationObserver(handleUrlChange);
-bodyObserver.observe(document.body, { childList: true, subtree: true });
+    function markInteraction() {
+        lastInteractionAt = Date.now();
+    }
 
-// Listen for global storage changes to handle pre-load loophole across tabs
-chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.shortsCount) {
-        localShortsCount = changes.shortsCount.newValue;
-        chrome.storage.local.get(['shortsBlockLimit'], (result) => {
-            const blockLimit = result.shortsBlockLimit || 10;
-            if (localShortsCount >= blockLimit && window.location.pathname.startsWith('/shorts/')) {
+    window.addEventListener('wheel', markInteraction, { passive: true });
+
+    // Capture phase scroll handles SPAs that scroll inner containers (X, IG, Discord, Reddit)
+    document.addEventListener('scroll', markInteraction, { capture: true, passive: true });
+
+    window.addEventListener('keydown', () => {
+        markInteraction();
+        flushPendingAudio();
+    }, true);
+
+    window.addEventListener('pointerdown', () => {
+        markInteraction();
+        flushPendingAudio();
+    }, true);
+
+    window.addEventListener('mousemove', markInteraction, { passive: true });
+    window.addEventListener('touchstart', markInteraction, { passive: true });
+
+    function evaluateCurrentRoute(forceCheck = false) {
+        const href = window.location.href;
+        if (!forceCheck && href === lastUrl) return;
+        lastUrl = href;
+
+        currentMatch = DoomPlatforms.evaluateUrl(href, cachedPlatformSettings, cachedCustomSites);
+
+        if (!currentMatch.matched) {
+            stopEnforcingBlock();
+            updateHud();
+            return;
+        }
+
+        syncStatusFromBackground();
+    }
+
+    function syncStatusFromBackground() {
+        chrome.runtime.sendMessage({ action: 'getStatus' }, (resp) => {
+            if (chrome.runtime.lastError || !resp) return;
+            currentDoomSeconds = resp.doomSeconds || 0;
+            currentDailySeconds = resp.dailyDoomSeconds || 0;
+            currentBlockLimitSeconds = resp.blockLimitSeconds || (20 * 60);
+
+            if (currentMatch.matched && (resp.blocked || currentDoomSeconds >= currentBlockLimitSeconds)) {
                 startEnforcingBlock();
-            } else if (localShortsCount < blockLimit) {
+            } else {
                 stopEnforcingBlock();
+                syncEffectsStage(resp.effectStage);
             }
-            updateShortsCountDisplay(localShortsCount, blockLimit);
+            updateHud();
         });
     }
-});
 
-// Also run on initial page load
-window.addEventListener('load', () => {
-    injectShortsCountDisplay();
-    injectBlockingOverlay();
-    
-    chrome.storage.local.get(['shortsCount', 'shortsBlockLimit'], (result) => {
-        localShortsCount = result.shortsCount || 0;
-        updateShortsCountDisplay(localShortsCount, result.shortsBlockLimit || 10);
-        if (localShortsCount >= (result.shortsBlockLimit || 10) && window.location.pathname.startsWith('/shorts/')) {
-            startEnforcingBlock();
-        }
-        handleUrlChange(); // Check URL on initial load after grabbing initial storage
+    function startActivityLoop() {
+        if (pingInterval) return;
+        pingInterval = setInterval(() => {
+            if (!currentMatch.matched) return;
+            if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
+
+            const recentlyActive = (Date.now() - lastInteractionAt) < ACTIVE_IDLE_WINDOW_MS;
+            if (!recentlyActive && !hasPlayingVisibleVideo()) return;
+
+            if (isBlocked) return;
+
+            chrome.runtime.sendMessage({ action: 'activityPing', platform: currentMatch.platformId }, (resp) => {
+                if (chrome.runtime.lastError || !resp || resp.error) return;
+                currentDoomSeconds = resp.doomSeconds || 0;
+                currentDailySeconds = resp.dailyDoomSeconds || 0;
+                currentBlockLimitSeconds = resp.blockLimitSeconds || (20 * 60);
+
+                if (resp.blocked) {
+                    startEnforcingBlock();
+                } else {
+                    if (resp.shouldScold && resp.sound) {
+                        playScoldAudio(resp.sound, 'Stop doomscrolling.');
+                    }
+                    syncEffectsStage(resp.effectStage);
+                    updateHud();
+                }
+            });
+        }, PING_INTERVAL_MS);
+    }
+
+    // SPA route listeners
+    const origPushState = history.pushState;
+    history.pushState = function (...args) {
+        const ret = origPushState.apply(this, args);
+        evaluateCurrentRoute();
+        return ret;
+    };
+
+    const origReplaceState = history.replaceState;
+    history.replaceState = function (...args) {
+        const ret = origReplaceState.apply(this, args);
+        evaluateCurrentRoute();
+        return ret;
+    };
+
+    window.addEventListener('popstate', () => evaluateCurrentRoute());
+
+    ensureBody(() => {
+        injectHudBadge();
+        injectBlockingOverlay();
+        const observer = new MutationObserver(() => {
+            if (window.location.href !== lastUrl) {
+                evaluateCurrentRoute();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     });
-});
 
-// Listener for messages from the background script or popup (e.g., reset)
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === "updateDisplay") {
-        chrome.storage.local.get(['shortsBlockLimit'], (result) => {
-            updateShortsCountDisplay(request.count, result.shortsBlockLimit || 10);
-            sendResponse({ status: "display updated" });
-        });
-        return true;
-    }
-});
+    setInterval(() => {
+        if (window.location.href !== lastUrl) {
+            evaluateCurrentRoute();
+        }
+    }, 1000);
+
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace !== 'local') return;
+        let needReeval = false;
+
+        if (changes.platformSettings) {
+            cachedPlatformSettings = changes.platformSettings.newValue;
+            needReeval = true;
+        }
+        if (changes.customSites) {
+            cachedCustomSites = changes.customSites.newValue || [];
+            needReeval = true;
+        }
+        if (changes.doomSeconds) {
+            currentDoomSeconds = changes.doomSeconds.newValue || 0;
+        }
+        if (changes.blockLimitMinutes) {
+            currentBlockLimitSeconds = (changes.blockLimitMinutes.newValue || 20) * 60;
+        }
+
+        if (needReeval) {
+            evaluateCurrentRoute(true);
+        } else if (changes.doomSeconds || changes.blockLimitMinutes) {
+            if (currentMatch.matched && currentDoomSeconds >= currentBlockLimitSeconds) {
+                startEnforcingBlock();
+            } else {
+                stopEnforcingBlock();
+                syncEffectsStage();
+            }
+            updateHud();
+        }
+    });
+
+    // Initial boot
+    chrome.storage.local.get([
+        'platformSettings',
+        'customSites',
+        'doomSeconds',
+        'dailyDoomSeconds',
+        'blockLimitMinutes'
+    ], (res) => {
+        cachedPlatformSettings = DoomPlatforms.mergePlatformSettings(res.platformSettings);
+        cachedCustomSites = Array.isArray(res.customSites) ? res.customSites : [];
+        currentDoomSeconds = res.doomSeconds || 0;
+        currentDailySeconds = res.dailyDoomSeconds || 0;
+        currentBlockLimitSeconds = (res.blockLimitMinutes || 20) * 60;
+
+        evaluateCurrentRoute(true);
+        startActivityLoop();
+    });
+})();
