@@ -3,7 +3,7 @@
   "name": "Doom Scolder",
   "short_name": "Doom Scolder",
   "version": "2.0.0",
-  "description": "A feisty little buddy that scolds you off endless feeds and brings Doom-level chaos when time's up!",
+  "description": "Stop doomscrolling! Set a daily budget across social feeds and short-form videos with scolds and anti-cheat.",
   "permissions": [
     "storage",
     "unlimitedStorage",
